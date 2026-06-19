@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gastos CQ</title>
+<title>CQ Caja</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1C3D35">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -108,11 +110,51 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 .empty{padding:26px;text-align:center;color:#A8BFA8;font-size:12px}
 
 @media(max-width:480px){.row2{grid-template-columns:1fr}}
+
+.sync-wrap{display:flex;align-items:center;gap:8px}
+.sync-pill{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:4px 9px;font-size:10px;color:#fff;font-weight:800}
+.sync-pill.err{background:rgba(192,57,43,.35)}
+.activity-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);color:#fff;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:800;cursor:pointer}
+.activity-feed-row{padding:10px 0;border-bottom:1px solid #F0EDE8}
+.activity-feed-row:last-child{border-bottom:none}
+.activity-feed-txt{font-size:12px;font-weight:700;color:var(--green)}
+.activity-feed-date{font-size:10px;color:#A8BFA8;margin-top:3px;font-family:var(--mono)}
+
 </style>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAf7vM8Og4jSe7QGHQUK-afvuXka9MCKU8",
+    authDomain: "cq-mano-de-obra.firebaseapp.com",
+    projectId: "cq-mano-de-obra",
+    storageBucket: "cq-mano-de-obra.firebasestorage.app",
+    messagingSenderId: "502127540211",
+    appId: "1:502127540211:web:8daefc75bdaafad412c486"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window._cqFirebase = { db, doc, setDoc, getDoc, onSnapshot };
+  window._cqFirebaseReady = true;
+  document.dispatchEvent(new Event("cq-firebase-ready"));
+</script>
+
 </head>
 <body>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="modal-actividad">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl">Actividad reciente</span><button class="modal-x" onclick="closeModal('modal-actividad')">×</button></div>
+    <div class="mbody" id="activity-feed"><div class="empty">Sin actividad reciente</div></div>
+  </div>
+</div>
+
 
 <!-- MODAL: gasto con deuda ($/usd) -->
 <div class="modal-bg" id="modal-gasto-deuda">
@@ -172,7 +214,11 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 </div>
 
 <div class="hdr">
-  <div class="hdr-ttl">Gastos <span>Emilio &amp; Juan · CQ</span></div>
+  <div class="hdr-ttl">CQ Caja <span>Emilio &amp; Juan</span></div>
+  <div class="sync-wrap">
+    <button class="activity-btn" onclick="openActividad()">Actividad</button>
+    <div class="sync-pill" id="sync-status">Sync: conectando...</div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -263,19 +309,134 @@ function socioColor(moneda,socio){
   return (moneda==='usd'?SOCIO_COLOR_USD:SOCIO_COLOR_PESOS)[socio];
 }
 var DB_KEY='gastos_cq_v1';
+var FIRESTORE_COLLECTION='cq_caja';
+var FIRESTORE_DOC_ID='gastos_compartidos_v1';
+var firebaseSaving=false, firebaseUnsub=null, saveTimer=null;
+var suppressRemoteUntil=0, pendingActivity=null, lastRemoteUpdatedAt=null;
+var currentTab='deuda-pesos';
 
-function loadDB(){
-  try{var s=JSON.parse(localStorage.getItem(DB_KEY)||'null');if(s)return s;}catch(e){}
+function emptyDB(){
   return {
     deudaPesos:[], deudaUsd:[],
     fondoPesosSaldoInicial:0, fondoPesosMovs:[],
     fondoUsdSaldoInicial:0, fondoUsdMovs:[],
     santanderSaldoInicial:0, santanderMovs:[],
-    santanderUsdSaldoInicial:0, santanderUsdMovs:[]
+    santanderUsdSaldoInicial:0, santanderUsdMovs:[],
+    activity:[]
   };
 }
+function sanitizeDB(s){
+  var base=emptyDB(); s=s||{};
+  Object.keys(base).forEach(function(k){
+    if(Array.isArray(base[k])) base[k]=Array.isArray(s[k])?s[k]:[];
+    else base[k]=parseFloat(s[k])||0;
+  });
+  base.activity=(base.activity||[]).slice(0,30);
+  return base;
+}
+function loadDB(){
+  try{var s=JSON.parse(localStorage.getItem(DB_KEY)||'null');if(s)return sanitizeDB(s);}catch(e){}
+  return emptyDB();
+}
 var DB=loadDB();
-function persist(){localStorage.setItem(DB_KEY,JSON.stringify(DB));}
+
+function setSyncStatus(txt,err){
+  var el=document.getElementById('sync-status');
+  if(!el)return;
+  el.textContent=txt;
+  el.className='sync-pill'+(err?' err':'');
+}
+function escapeHTML(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+function formatDateTime(v){
+  if(!v)return '';
+  var d=new Date(v);
+  if(isNaN(d.getTime()))return String(v);
+  return d.toLocaleDateString('es-AR')+' '+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+}
+function addActivity(text){
+  if(!text)return;
+  DB.activity=DB.activity||[];
+  DB.activity.unshift({id:Date.now(),text:text,at:new Date().toISOString()});
+  DB.activity=DB.activity.slice(0,30);
+}
+function openActividad(){renderActividad();openModal('modal-actividad');}
+function renderActividad(){
+  var el=document.getElementById('activity-feed');
+  if(!el)return;
+  var list=(DB.activity||[]).slice(0,30);
+  if(!list.length){el.innerHTML='<div class="empty">Sin actividad reciente</div>';return;}
+  el.innerHTML=list.map(function(a){
+    return '<div class="activity-feed-row"><div class="activity-feed-txt">'+escapeHTML(a.text||'Movimiento')+'</div><div class="activity-feed-date">'+formatDateTime(a.at)+'</div></div>';
+  }).join('');
+}
+function persist(activityText){
+  DB=sanitizeDB(DB);
+  if(activityText){addActivity(activityText);pendingActivity=activityText;}
+  localStorage.setItem(DB_KEY,JSON.stringify(DB));
+  scheduleFirebaseSave();
+}
+function scheduleFirebaseSave(){
+  if(!window._cqFirebaseReady||!window._cqFirebase)return;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(saveToFirebase,450);
+}
+async function saveToFirebase(){
+  if(!window._cqFirebaseReady||!window._cqFirebase||firebaseSaving)return;
+  try{
+    firebaseSaving=true;
+    setSyncStatus('Sync: guardando...');
+    suppressRemoteUntil=Date.now()+1200;
+    var f=window._cqFirebase;
+    var payload={db:sanitizeDB(DB),updatedAt:new Date().toISOString(),lastActivity:pendingActivity||null};
+    await f.setDoc(f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID),payload);
+    lastRemoteUpdatedAt=payload.updatedAt;
+    pendingActivity=null;
+    setSyncStatus('Sync: ON');
+  }catch(e){console.warn(e);setSyncStatus('Sync: error',true);}
+  finally{firebaseSaving=false;}
+}
+async function loadFromFirebase(){
+  if(!window._cqFirebaseReady||!window._cqFirebase)return;
+  try{
+    setSyncStatus('Sync: cargando...');
+    var f=window._cqFirebase;
+    var ref=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
+    var snap=await f.getDoc(ref);
+    if(snap.exists()&&snap.data().db){
+      DB=sanitizeDB(snap.data().db);
+      lastRemoteUpdatedAt=snap.data().updatedAt||null;
+      localStorage.setItem(DB_KEY,JSON.stringify(DB));
+    }else{
+      await f.setDoc(ref,{db:sanitizeDB(DB),updatedAt:new Date().toISOString(),lastActivity:null});
+    }
+    setSyncStatus('Sync: ON');
+    listenFirebase();
+    renderCurrent();
+  }catch(e){console.warn(e);setSyncStatus('Sync: error',true);renderCurrent();}
+}
+function listenFirebase(){
+  if(firebaseUnsub||!window._cqFirebaseReady||!window._cqFirebase)return;
+  var f=window._cqFirebase;
+  firebaseUnsub=f.onSnapshot(f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID),function(snap){
+    if(Date.now()<suppressRemoteUntil)return;
+    if(snap.exists()&&snap.data().db){
+      var data=snap.data();
+      var isNew=lastRemoteUpdatedAt && data.updatedAt && data.updatedAt!==lastRemoteUpdatedAt;
+      DB=sanitizeDB(data.db);
+      lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
+      localStorage.setItem(DB_KEY,JSON.stringify(DB));
+      setSyncStatus('Sync: ON');
+      renderCurrent();
+      if(isNew && data.lastActivity) toast(data.lastActivity);
+    }
+  },function(e){console.warn(e);setSyncStatus('Sync: error',true);});
+}
+document.addEventListener('cq-firebase-ready',loadFromFirebase);
+setTimeout(function(){
+  if(!window._cqFirebaseReady){setSyncStatus('Sync: local',true);renderCurrent();}
+},1800);
 
 function fmtN(n,dec){if(n==null||isNaN(n))return '-';dec=dec!=null?dec:2;return parseFloat(n).toLocaleString('es-AR',{maximumFractionDigits:dec});}
 function fmtP(n){return '$'+fmtN(n,0);}
@@ -306,11 +467,22 @@ function fillDatalists(){
     if(el) el.innerHTML=opts;
   });
 }
+function renderCurrent(){
+  if(currentTab==='deuda-pesos') renderDeuda('pesos');
+  else if(currentTab==='deuda-usd') renderDeuda('usd');
+  else if(currentTab==='fondo-pesos') renderFondo('fondo-pesos');
+  else if(currentTab==='fondo-usd') renderFondo('fondo-usd');
+  else if(currentTab==='santander') renderFondo('santander');
+  else if(currentTab==='santander-usd') renderFondo('santander-usd');
+  renderActividad();
+}
+
 
 // ═══════════════════════════════════════════
 // TABS
 // ═══════════════════════════════════════════
 function showTab(t){
+  currentTab=t;
   ['deuda-pesos','deuda-usd','fondo-pesos','fondo-usd','santander','santander-usd'].forEach(function(x){
     document.getElementById('view-'+x).style.display=x===t?'block':'none';
     document.getElementById('tab-'+x).classList.toggle('active',x===t);
@@ -328,6 +500,14 @@ function showTab(t){
 // ═══════════════════════════════════════════
 function deudaList(moneda){ return moneda==='pesos'?DB.deudaPesos:DB.deudaUsd; }
 function fmtMon(moneda,n){ return moneda==='pesos'?fmtP(n):fmtU(n); }
+function labelDeuda(moneda){return moneda==='pesos'?'Deuda $':'Deuda u$s';}
+function labelFondo(tipo){
+  if(tipo==='fondo-pesos')return 'Fondo común $';
+  if(tipo==='fondo-usd')return 'Fondo común u$s';
+  if(tipo==='santander-usd')return 'Cuenta Santander u$s';
+  return 'Cuenta Santander $';
+}
+
 
 // Calcula cuánto puso cada socio en total, y la diferencia respecto al reparto igual
 function calcBalance(moneda){
@@ -447,17 +627,19 @@ function guardarGastoDeuda(){
     var idx=lista.findIndex(function(x){return x.id===gdEditId;});
     if(idx>=0) lista[idx]=Object.assign({},lista[idx],{monto:monto,desc:desc,fecha:fecha,pagador:pagador});
     toast('✓ Gasto actualizado');
+    persist('Se modificó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
   } else {
     lista.push({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador});
     toast('✓ Gasto registrado: '+fmtMon(gdMoneda,monto));
+    persist('Se cargó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
   }
-  persist();closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
+  closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
 }
 function borrarDeuda(moneda,id){
   var lista=deudaList(moneda);
   var idx=lista.findIndex(function(x){return x.id===id;});
   if(idx>=0) lista.splice(idx,1);
-  persist();toast('Eliminado');renderDeuda(moneda);
+  persist('Se eliminó un movimiento en '+labelDeuda(moneda));toast('Eliminado');renderDeuda(moneda);
 }
 
 var liqMoneda=null;
@@ -483,7 +665,7 @@ function confirmarLiquidar(){
   var fecha=document.getElementById('liquidar-fecha').value||todayISO();
   // El deudor "paga" ese monto como gasto, lo que empareja matemáticamente las cuentas
   deudaList(moneda).push({id:Date.now(),tipo:'liquidacion',monto:monto,desc:'Liquidación de saldo',fecha:fecha,pagador:deudor});
-  persist();closeModal('modal-liquidar');toast('✓ Cuentas liquidadas');renderDeuda(moneda);
+  persist('Se liquidó una deuda de '+fmtMon(moneda,monto)+' en '+labelDeuda(moneda));closeModal('modal-liquidar');toast('✓ Cuentas liquidadas');renderDeuda(moneda);
 }
 
 // ═══════════════════════════════════════════
@@ -576,11 +758,13 @@ function guardarGastoFondo(){
     var idx=DB[cfg.movs].findIndex(function(x){return x.id===gfEditId;});
     if(idx>=0) DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:desc,fecha:fecha});
     toast('✓ Gasto actualizado');
+    persist('Se modificó un gasto de '+cfg.fmt(monto)+' en '+labelFondo(gfTipo));
   } else {
     DB[cfg.movs].push({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha});
     toast('✓ Gasto registrado: '+cfg.fmt(monto));
+    persist('Se cargó un gasto de '+cfg.fmt(monto)+' en '+labelFondo(gfTipo));
   }
-  persist();closeModal('modal-gasto-fondo');renderFondo(gfTipo);
+  closeModal('modal-gasto-fondo');renderFondo(gfTipo);
 }
 
 var ingTipo=null, ingEditId=null;
@@ -621,16 +805,18 @@ function guardarIngreso(){
     var idx=DB[cfg.movs].findIndex(function(x){return x.id===ingEditId;});
     if(idx>=0) DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:desc,fecha:fecha});
     toast('✓ Ingreso actualizado');
+    persist('Se modificó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   } else {
     DB[cfg.movs].push({id:Date.now(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha});
     toast('✓ Ingreso registrado: '+cfg.fmt(monto));
+    persist('Se cargó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   }
-  persist();closeModal('modal-ingreso');renderFondo(ingTipo);
+  closeModal('modal-ingreso');renderFondo(ingTipo);
 }
 function borrarFondoMov(tipo,id){
   var cfg=fondoConfig(tipo);
   DB[cfg.movs]=(DB[cfg.movs]||[]).filter(function(x){return x.id!==id;});
-  persist();toast('Eliminado');renderFondo(tipo);
+  persist('Se eliminó un movimiento en '+labelFondo(tipo));toast('Eliminado');renderFondo(tipo);
 }
 
 // ═══════════════════════════════════════════
