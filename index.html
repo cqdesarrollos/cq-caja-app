@@ -37,8 +37,8 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 .tab[data-c="fondo-usd"].active{color:#7B3FA0;border-bottom-color:#7B3FA0}
 .tab[data-c="santander"]{color:#D87E72}
 .tab[data-c="santander"].active{color:#C0392B;border-bottom-color:#C0392B}
-.tab[data-c="santander-usd"]{color:#C97A8C}
-.tab[data-c="santander-usd"].active{color:#9B3A5A;border-bottom-color:#9B3A5A}
+.tab[data-c="santander-usd"]{color:#5FAFA0}
+.tab[data-c="santander-usd"].active{color:#107A68;border-bottom-color:#107A68}
 
 .main{padding:14px;max-width:760px;margin:0 auto}
 .sec-ttl{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--green3);margin-bottom:8px;margin-top:6px}
@@ -190,7 +190,7 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
   <div id="view-deuda-pesos">
     <div class="balanza" id="balanza-pesos"></div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-p btn-full" onclick="openGastoDeuda('pesos')">+ Cargar gasto</button>
+      <button class="btn btn-full" style="background:#2B7BE0;color:#fff" onclick="openGastoDeuda('pesos')">+ Cargar gasto</button>
     </div>
     <div class="sec-ttl">Historial</div>
     <div id="lista-deuda-pesos"></div>
@@ -200,7 +200,7 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
   <div id="view-deuda-usd" style="display:none">
     <div class="balanza" id="balanza-usd"></div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-p btn-full" onclick="openGastoDeuda('usd')">+ Cargar gasto</button>
+      <button class="btn btn-full" style="background:#3A8A20;color:#fff" onclick="openGastoDeuda('usd')">+ Cargar gasto</button>
     </div>
     <div class="sec-ttl">Historial</div>
     <div id="lista-deuda-usd"></div>
@@ -243,7 +243,7 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
   <div id="view-santander-usd" style="display:none">
     <div class="kpi-row" id="kpi-santander-usd"></div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-full" style="background:#9B3A5A;color:#fff" onclick="openGastoFondo('santander-usd')">+ Gasto</button>
+      <button class="btn btn-full" style="background:#107A68;color:#fff" onclick="openGastoFondo('santander-usd')">+ Gasto</button>
       <button class="btn btn-s btn-full" onclick="openIngreso('santander-usd')">+ Ingreso</button>
     </div>
     <div class="sec-ttl">Movimientos</div>
@@ -257,7 +257,11 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 // ESTADO
 // ═══════════════════════════════════════════
 var SOCIOS=['Emilio','Juan'];
-var SOCIO_COLOR={'Emilio':'var(--emilio)','Juan':'var(--juan)'};
+var SOCIO_COLOR_PESOS={'Emilio':'#2B7BE0','Juan':'#C8882A'};
+var SOCIO_COLOR_USD={'Emilio':'#1E8DB4','Juan':'#3A8A20'};
+function socioColor(moneda,socio){
+  return (moneda==='usd'?SOCIO_COLOR_USD:SOCIO_COLOR_PESOS)[socio];
+}
 var DB_KEY='gastos_cq_v1';
 
 function loadDB(){
@@ -359,10 +363,10 @@ function renderBalanza(moneda){
     sub=s1+' puso '+fmtMon(moneda,b.totalPorSocio[s1])+' · '+s2+' puso '+fmtMon(moneda,b.totalPorSocio[s2]);
   }
 
-  var html='<div class="balanza-names"><span style="color:'+SOCIO_COLOR[s1]+'">'+s1+'</span><span style="color:'+SOCIO_COLOR[s2]+'">'+s2+'</span></div>'
+  var html='<div class="balanza-names"><span style="color:'+socioColor(moneda,s1)+'">'+s1+'</span><span style="color:'+socioColor(moneda,s2)+'">'+s2+'</span></div>'
     +'<div class="balanza-bar">'
-    +'<div class="balanza-fill" style="left:0;width:'+pct1+'%;background:'+SOCIO_COLOR[s1]+'"></div>'
-    +'<div class="balanza-fill" style="left:'+pct1+'%;width:'+(100-pct1)+'%;background:'+SOCIO_COLOR[s2]+'"></div>'
+    +'<div class="balanza-fill" style="left:0;width:'+pct1+'%;background:'+socioColor(moneda,s1)+'"></div>'
+    +'<div class="balanza-fill" style="left:'+pct1+'%;width:'+(100-pct1)+'%;background:'+socioColor(moneda,s2)+'"></div>'
     +'</div>'
     +'<div class="balanza-msg">'+msg+'</div>'
     +'<div class="balanza-sub">'+sub+'</div>';
@@ -384,7 +388,7 @@ function renderDeuda(moneda){
       +'<div class="gasto-fecha">'+fmtFecha(g.fecha)+'</div>'
       +'<div class="gasto-main">'
       +'<div class="gasto-desc">'+(isLiq?'✓ Liquidación':g.desc||'(sin descripción)')+'</div>'
-      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+SOCIO_COLOR[g.pagador]+';color:#fff">'+g.pagador+'</span>'+(isLiq?'pagó la diferencia':'pagó')+'</div>'
+      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+socioColor(moneda,g.pagador)+';color:#fff">'+g.pagador+'</span>'+(isLiq?'pagó la diferencia':'pagó')+'</div>'
       +'</div>'
       +'<div class="gasto-val">'+fmtMon(moneda,g.monto)+'</div>'
       +'<div class="gasto-actions">'
@@ -488,7 +492,7 @@ function confirmarLiquidar(){
 function fondoConfig(tipo){
   if(tipo==='fondo-pesos') return {movs:'fondoPesosMovs',saldoInit:'fondoPesosSaldoInicial',fmt:fmtP,label:'$',titulo:'Fondo común $',accent:'#C8882A',accentL:'#F5E6C8'};
   if(tipo==='fondo-usd') return {movs:'fondoUsdMovs',saldoInit:'fondoUsdSaldoInicial',fmt:fmtU,label:'u$s',titulo:'Fondo común u$s',accent:'#7B3FA0',accentL:'#F0E5F7'};
-  if(tipo==='santander-usd') return {movs:'santanderUsdMovs',saldoInit:'santanderUsdSaldoInicial',fmt:fmtU,label:'u$s',titulo:'Cuenta Santander u$s',accent:'#9B3A5A',accentL:'#F7E5EB'};
+  if(tipo==='santander-usd') return {movs:'santanderUsdMovs',saldoInit:'santanderUsdSaldoInicial',fmt:fmtU,label:'u$s',titulo:'Cuenta Santander u$s',accent:'#107A68',accentL:'#E2F2EE'};
   return {movs:'santanderMovs',saldoInit:'santanderSaldoInicial',fmt:fmtP,label:'$',titulo:'Cuenta Santander',accent:'#C0392B',accentL:'#FDECEA'};
 }
 function fondoSaldo(tipo){
