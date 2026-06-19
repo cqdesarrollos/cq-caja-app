@@ -201,6 +201,23 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
   </div>
 </div>
 
+
+<!-- MODAL: pago parcial de deuda -->
+<div class="modal-bg" id="modal-pago-parcial">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl">Pago parcial</span><button class="modal-x" onclick="closeModal('modal-pago-parcial')">×</button></div>
+    <div class="mbody">
+      <p style="font-size:13px;color:var(--green);line-height:1.5" id="pp-msg"></p>
+      <div class="fld" style="margin-top:14px"><label>¿Quién hizo el pago parcial?</label>
+        <div class="payer-chips" id="pp-payer-chips"></div>
+      </div>
+      <div class="fld"><label id="pp-monto-label">Monto</label><input type="number" id="pp-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fld"><label>Fecha del pago</label><input type="date" id="pp-fecha"></div>
+    </div>
+    <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-pago-parcial')">Cancelar</button><button class="btn btn-p btn-sm" onclick="confirmarPagoParcial()">Registrar pago</button></div>
+  </div>
+</div>
+
 <!-- MODAL: liquidar deuda -->
 <div class="modal-bg" id="modal-liquidar">
   <div class="modal">
@@ -552,7 +569,10 @@ function renderBalanza(moneda){
     +'<div class="balanza-sub">'+sub+'</div>';
 
   if(Math.abs(d1)>=0.5){
-    html+='<button class="btn btn-s btn-sm" style="margin-top:12px" onclick="openLiquidar(\''+moneda+'\')">✓ Marcar como liquidado</button>';
+    html+='<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px">'
+      +'<button class="btn btn-s btn-sm" onclick="openPagoParcial(\''+moneda+'\')">+ Pago parcial</button>'
+      +'<button class="btn btn-s btn-sm" onclick="openLiquidar(\''+moneda+'\')">✓ Marcar como liquidado</button>'
+      +'</div>';
   }
   el.innerHTML=html;
 }
@@ -564,15 +584,16 @@ function renderDeuda(moneda){
   if(!lista.length){document.getElementById(contId).innerHTML='<div class="card"><div class="empty">Sin gastos registrados</div></div>';return;}
   var rows=lista.map(function(g){
     var isLiq=g.tipo==='liquidacion';
+    var isPP=g.tipo==='pago_parcial';
     return '<div class="gasto-row">'
       +'<div class="gasto-fecha">'+fmtFecha(g.fecha)+'</div>'
       +'<div class="gasto-main">'
-      +'<div class="gasto-desc">'+(isLiq?'✓ Liquidación':g.desc||'(sin descripción)')+'</div>'
-      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+socioColor(moneda,g.pagador)+';color:#fff">'+g.pagador+'</span>'+(isLiq?'pagó la diferencia':'pagó')+'</div>'
+      +'<div class="gasto-desc">'+(isLiq?'✓ Liquidación':(isPP?'↘ Pago parcial':g.desc||'(sin descripción)'))+'</div>'
+      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+socioColor(moneda,g.pagador)+';color:#fff">'+g.pagador+'</span>'+(isLiq?'pagó la diferencia':(isPP?'pagó parcialmente':'pagó'))+'</div>'
       +'</div>'
       +'<div class="gasto-val">'+fmtMon(moneda,g.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(isLiq?'':'<button class="icon-btn" onclick="openEditDeuda(\''+moneda+'\','+g.id+')">✎</button>')
+      +((isLiq||isPP)?'':'<button class="icon-btn" onclick="openEditDeuda(\''+moneda+'\','+g.id+')">✎</button>')
       +'<button class="icon-btn del" onclick="borrarDeuda(\''+moneda+'\','+g.id+')">✕</button>'
       +'</div>'
       +'</div>';
@@ -640,6 +661,44 @@ function borrarDeuda(moneda,id){
   var idx=lista.findIndex(function(x){return x.id===id;});
   if(idx>=0) lista.splice(idx,1);
   persist('Se eliminó un movimiento en '+labelDeuda(moneda));toast('Eliminado');renderDeuda(moneda);
+}
+
+
+var ppMoneda=null;
+function openPagoParcial(moneda){
+  ppMoneda=moneda;
+  var b=calcBalance(moneda);
+  var s1=SOCIOS[0],s2=SOCIOS[1];
+  var d1=b.diff[s1];
+  var deudor = d1>0?s2:s1;
+  var acreedor = d1>0?s1:s2;
+  var saldo=Math.abs(d1);
+  if(saldo<0.5){
+    document.getElementById('pp-msg').innerHTML='No hay deuda pendiente. Si registrás un pago parcial, se generará una nueva diferencia entre socios.';
+  }else{
+    document.getElementById('pp-msg').innerHTML='<b>'+deudor+'</b> le debe a <b>'+acreedor+'</b> '+fmtMon(moneda,saldo)+'. Podés registrar un pago de cualquiera de los dos socios: si paga quien debe, baja la deuda; si paga el otro, la deuda aumenta.';
+  }
+  document.getElementById('pp-payer-chips').innerHTML=SOCIOS.map(function(s,i){
+    var active = (s===deudor || (saldo<0.5 && i===0)) ? ' active' : '';
+    return '<button class="payer-chip'+active+'" data-s="'+s+'" onclick="selectPayer(this)">'+s+'</button>';
+  }).join('');
+  document.getElementById('pp-monto-label').textContent='Monto '+(moneda==='pesos'?'$':'u$s');
+  document.getElementById('pp-monto').value='';
+  document.getElementById('pp-fecha').value=todayISO();
+  openModal('modal-pago-parcial');
+}
+function confirmarPagoParcial(){
+  var moneda=ppMoneda;
+  var monto=parseFloat(document.getElementById('pp-monto').value);
+  var fecha=document.getElementById('pp-fecha').value||todayISO();
+  var activeBtn=document.querySelector('#pp-payer-chips .payer-chip.active');
+  var pagador=activeBtn?activeBtn.dataset.s:SOCIOS[0];
+  if(!monto||monto<=0){alert('Ingresá un monto válido');return;}
+  deudaList(moneda).push({id:Date.now(),tipo:'pago_parcial',monto:monto,desc:'Pago parcial de saldo',fecha:fecha,pagador:pagador});
+  persist('Se cargó un pago parcial de '+fmtMon(moneda,monto)+' en '+labelDeuda(moneda));
+  closeModal('modal-pago-parcial');
+  toast('✓ Pago parcial registrado');
+  renderDeuda(moneda);
 }
 
 var liqMoneda=null;
