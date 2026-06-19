@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gastos CQ</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min-height:100vh}
+:root{
+  --green:#1C3D35;--green2:#2E7D5E;--green3:#7AAF96;
+  --sand:#F5F3EF;--sand2:#EDE9E1;--sand3:#D5CFC3;
+  --amber:#C8882A;--amberL:#F5E6C8;
+  --blue:#2B5EA7;--blueL:#EBF0FA;
+  --red:#C0392B;--redL:#FDECEA;
+  --mono:'JetBrains Mono',monospace;
+  --emilio:#2B7BE0;--juan:#C8882A;
+}
+
+.hdr{background:var(--green);padding:12px 16px;position:sticky;top:0;z-index:200;display:flex;align-items:center;justify-content:space-between}
+.hdr-ttl{font-size:15px;font-weight:800;color:#fff;letter-spacing:.03em}
+.hdr-ttl span{color:var(--green3);font-size:11px;font-weight:500;margin-left:8px}
+
+.tabs{background:#fff;border-bottom:1px solid var(--sand3);display:flex;overflow-x:auto;scrollbar-width:none;position:sticky;top:49px;z-index:100}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:11px 14px;font-size:10.5px;font-weight:800;letter-spacing:.03em;color:#9AAE9A;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s}
+.tab-curr{font-size:14px;font-weight:800;margin-left:1px}
+.tab.active{border-bottom-width:3px}
+.tab[data-c="deuda-pesos"]{color:#5B9BE0}
+.tab[data-c="deuda-pesos"].active{color:#2B7BE0;border-bottom-color:#2B7BE0}
+.tab[data-c="deuda-usd"]{color:#6FB04A}
+.tab[data-c="deuda-usd"].active{color:#3A8A20;border-bottom-color:#3A8A20}
+.tab[data-c="fondo-pesos"]{color:#D9A85C}
+.tab[data-c="fondo-pesos"].active{color:#C8882A;border-bottom-color:#C8882A}
+.tab[data-c="fondo-usd"]{color:#A875C2}
+.tab[data-c="fondo-usd"].active{color:#7B3FA0;border-bottom-color:#7B3FA0}
+.tab[data-c="santander"]{color:#D87E72}
+.tab[data-c="santander"].active{color:#C0392B;border-bottom-color:#C0392B}
+.tab[data-c="santander-usd"]{color:#C97A8C}
+.tab[data-c="santander-usd"].active{color:#9B3A5A;border-bottom-color:#9B3A5A}
+
+.main{padding:14px;max-width:760px;margin:0 auto}
+.sec-ttl{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--green3);margin-bottom:8px;margin-top:6px}
+
+/* BALANZA — signature element for debt tabs */
+.balanza{background:#fff;border:1px solid var(--sand3);border-radius:14px;padding:22px 18px;margin-bottom:16px;text-align:center;position:relative;overflow:hidden}
+.balanza-bar{height:10px;border-radius:6px;background:var(--sand2);position:relative;margin:14px 0;overflow:hidden}
+.balanza-fill{position:absolute;top:0;height:100%;border-radius:6px;transition:all .4s cubic-bezier(.4,0,.2,1)}
+.balanza-names{display:flex;justify-content:space-between;font-size:11px;font-weight:800;margin-bottom:4px}
+.balanza-msg{font-size:14px;font-weight:700;color:var(--green);margin-top:10px}
+.balanza-msg b{font-family:var(--mono)}
+.balanza-sub{font-size:10px;color:#A8BFA8;margin-top:4px}
+
+.kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--sand3);border-radius:10px;padding:12px 14px}
+.kpi-label{font-size:9px;font-weight:800;color:var(--green3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.kpi-val{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--green)}
+.kpi-sub{font-size:9px;color:#A8BFA8;margin-top:2px}
+.kpi.fondo .kpi-val{color:var(--green2)}
+.kpi.warn .kpi-val{color:var(--red)}
+
+.card{background:#fff;border:1px solid var(--sand3);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.card-hd{padding:10px 14px;border-bottom:1px solid #F0EDE8;display:flex;align-items:center;justify-content:space-between}
+.card-ttl{font-size:12px;font-weight:800;color:var(--green)}
+
+.fld{margin-bottom:10px}
+.fld label{display:block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--green3);margin-bottom:4px}
+.fld input,.fld select,.fld textarea{width:100%;background:#F7F6F3;border:1px solid var(--sand3);border-radius:7px;padding:9px 11px;font-size:13px;font-family:'Space Grotesk',sans-serif;font-weight:600;color:var(--green);outline:none;transition:border-color .15s}
+.fld input:focus,.fld select:focus{border-color:var(--green2)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+.payer-chips{display:flex;gap:8px;margin-bottom:10px}
+.payer-chip{flex:1;padding:11px;border-radius:9px;border:2px solid var(--sand3);background:#fff;font-size:13px;font-weight:800;cursor:pointer;text-align:center;transition:all .15s}
+.payer-chip.active{border-color:var(--green2);background:#EBF7F0;color:var(--green)}
+
+.btn{padding:9px 18px;border-radius:8px;border:none;font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:12px;cursor:pointer;transition:all .15s;letter-spacing:.03em}
+.btn-p{background:var(--green);color:#fff}.btn-p:hover{background:var(--green2)}
+.btn-s{background:var(--sand2);color:var(--green)}.btn-s:hover{background:var(--sand3)}
+.btn-d{background:var(--redL);color:var(--red)}.btn-d:hover{background:#FAD7D4}
+.btn-sm{padding:6px 12px;font-size:11px}
+.btn-full{width:100%;padding:12px}
+
+.gasto-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #F5F3EF}
+.gasto-row:last-child{border-bottom:none}
+.gasto-fecha{font-family:var(--mono);font-size:9px;color:#A8BFA8;min-width:58px}
+.gasto-main{flex:1;min-width:0}
+.gasto-desc{font-size:12px;font-weight:700;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gasto-meta{font-size:10px;color:#A8BFA8;margin-top:1px}
+.gasto-tag{display:inline-flex;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;margin-right:5px}
+.gasto-val{font-family:var(--mono);font-weight:800;font-size:13px;color:var(--green);white-space:nowrap}
+.gasto-actions{display:flex;gap:3px}
+.icon-btn{background:none;border:none;cursor:pointer;color:#C4D4C4;font-size:13px;padding:2px 4px;transition:color .15s}
+.icon-btn:hover{color:var(--green2)}
+.icon-btn.del:hover{color:var(--red)}
+
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(28,45,34,.5);z-index:400;align-items:center;justify-content:center;padding:16px}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
+.modal-hd{padding:14px 18px 10px;border-bottom:1px solid #EEF4EE;display:flex;align-items:center;justify-content:space-between}
+.modal-ttl{font-weight:800;font-size:14px;color:var(--green)}
+.modal-x{background:none;border:none;font-size:18px;cursor:pointer;color:#9AAE9A;line-height:1}
+.mbody{padding:16px 18px}
+.mfooter{padding:10px 18px 14px;display:flex;gap:8px;justify-content:flex-end}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:9px 20px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 20px rgba(28,61,53,.35);z-index:600;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.empty{padding:26px;text-align:center;color:#A8BFA8;font-size:12px}
+
+@media(max-width:480px){.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- MODAL: gasto con deuda ($/usd) -->
+<div class="modal-bg" id="modal-gasto-deuda">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl" id="gd-ttl">Nuevo gasto</span><button class="modal-x" onclick="closeModal('modal-gasto-deuda')">×</button></div>
+    <div class="mbody">
+      <div class="fld"><label>¿Quién pagó?</label>
+        <div class="payer-chips" id="gd-payer-chips"></div>
+      </div>
+      <div class="fld"><label id="gd-monto-label">Monto $</label><input type="number" id="gd-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fld"><label>Descripción *</label><input type="text" id="gd-desc" list="dl-desc-deuda" placeholder="ej: Combustible obra 4/100"></div>
+      <datalist id="dl-desc-deuda"></datalist>
+      <div class="fld"><label>Fecha</label><input type="date" id="gd-fecha"></div>
+    </div>
+    <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-gasto-deuda')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarGastoDeuda()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- MODAL: gasto sobre fondo/cuenta (sin deuda) -->
+<div class="modal-bg" id="modal-gasto-fondo">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl" id="gf-ttl">Nuevo gasto</span><button class="modal-x" onclick="closeModal('modal-gasto-fondo')">×</button></div>
+    <div class="mbody">
+      <div class="fld"><label id="gf-monto-label">Monto</label><input type="number" id="gf-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fld"><label>Descripción *</label><input type="text" id="gf-desc" list="dl-desc-fondo" placeholder="ej: Compra de cemento"></div>
+      <datalist id="dl-desc-fondo"></datalist>
+      <div class="fld"><label>Fecha</label><input type="date" id="gf-fecha"></div>
+    </div>
+    <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-gasto-fondo')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarGastoFondo()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- MODAL: ingreso a fondo/cuenta -->
+<div class="modal-bg" id="modal-ingreso">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl" id="ing-ttl">Registrar ingreso</span><button class="modal-x" onclick="closeModal('modal-ingreso')">×</button></div>
+    <div class="mbody">
+      <div class="fld"><label id="ing-monto-label">Monto</label><input type="number" id="ing-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fld"><label>Origen / notas *</label><input type="text" id="ing-desc" list="dl-desc-ingreso" placeholder="ej: Aporte de socios"></div>
+      <datalist id="dl-desc-ingreso"></datalist>
+      <div class="fld"><label>Fecha</label><input type="date" id="ing-fecha"></div>
+    </div>
+    <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-ingreso')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarIngreso()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- MODAL: liquidar deuda -->
+<div class="modal-bg" id="modal-liquidar">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-ttl">Liquidar deuda</span><button class="modal-x" onclick="closeModal('modal-liquidar')">×</button></div>
+    <div class="mbody">
+      <p style="font-size:13px;color:var(--green);line-height:1.5" id="liquidar-msg"></p>
+      <div class="fld" style="margin-top:14px"><label>Fecha del pago</label><input type="date" id="liquidar-fecha"></div>
+    </div>
+    <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-liquidar')">Cancelar</button><button class="btn btn-p btn-sm" onclick="confirmarLiquidar()">Confirmar liquidación</button></div>
+  </div>
+</div>
+
+<div class="hdr">
+  <div class="hdr-ttl">Gastos <span>Emilio &amp; Juan · CQ</span></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-c="deuda-pesos" id="tab-deuda-pesos" onclick="showTab('deuda-pesos')">Deuda <span class="tab-curr">$</span></button>
+  <button class="tab" data-c="deuda-usd" id="tab-deuda-usd" onclick="showTab('deuda-usd')">Deuda <span class="tab-curr">u$s</span></button>
+  <button class="tab" data-c="fondo-pesos" id="tab-fondo-pesos" onclick="showTab('fondo-pesos')">Fondo común <span class="tab-curr">$</span></button>
+  <button class="tab" data-c="fondo-usd" id="tab-fondo-usd" onclick="showTab('fondo-usd')">Fondo común <span class="tab-curr">u$s</span></button>
+  <button class="tab" data-c="santander" id="tab-santander" onclick="showTab('santander')">Cta. Santander <span class="tab-curr">$</span></button>
+  <button class="tab" data-c="santander-usd" id="tab-santander-usd" onclick="showTab('santander-usd')">Cta. Santander <span class="tab-curr">u$s</span></button>
+</div>
+
+<div class="main">
+
+  <!-- ══════════ DEUDA $ ══════════ -->
+  <div id="view-deuda-pesos">
+    <div class="balanza" id="balanza-pesos"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-p btn-full" onclick="openGastoDeuda('pesos')">+ Cargar gasto</button>
+    </div>
+    <div class="sec-ttl">Historial</div>
+    <div id="lista-deuda-pesos"></div>
+  </div>
+
+  <!-- ══════════ DEUDA U$S ══════════ -->
+  <div id="view-deuda-usd" style="display:none">
+    <div class="balanza" id="balanza-usd"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-p btn-full" onclick="openGastoDeuda('usd')">+ Cargar gasto</button>
+    </div>
+    <div class="sec-ttl">Historial</div>
+    <div id="lista-deuda-usd"></div>
+  </div>
+
+  <!-- ══════════ FONDO COMÚN $ ══════════ -->
+  <div id="view-fondo-pesos" style="display:none">
+    <div class="kpi-row" id="kpi-fondo-pesos"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-full" style="background:#C8882A;color:#fff" onclick="openGastoFondo('fondo-pesos')">+ Gasto</button>
+      <button class="btn btn-s btn-full" onclick="openIngreso('fondo-pesos')">+ Ingreso</button>
+    </div>
+    <div class="sec-ttl">Movimientos</div>
+    <div id="lista-fondo-pesos"></div>
+  </div>
+
+  <!-- ══════════ FONDO COMÚN U$S ══════════ -->
+  <div id="view-fondo-usd" style="display:none">
+    <div class="kpi-row" id="kpi-fondo-usd"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-full" style="background:#7B3FA0;color:#fff" onclick="openGastoFondo('fondo-usd')">+ Gasto</button>
+      <button class="btn btn-s btn-full" onclick="openIngreso('fondo-usd')">+ Ingreso</button>
+    </div>
+    <div class="sec-ttl">Movimientos</div>
+    <div id="lista-fondo-usd"></div>
+  </div>
+
+  <!-- ══════════ SANTANDER ══════════ -->
+  <div id="view-santander" style="display:none">
+    <div class="kpi-row" id="kpi-santander"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-full" style="background:#C0392B;color:#fff" onclick="openGastoFondo('santander')">+ Gasto</button>
+      <button class="btn btn-s btn-full" onclick="openIngreso('santander')">+ Ingreso</button>
+    </div>
+    <div class="sec-ttl">Movimientos</div>
+    <div id="lista-santander"></div>
+  </div>
+
+  <!-- ══════════ SANTANDER U$S ══════════ -->
+  <div id="view-santander-usd" style="display:none">
+    <div class="kpi-row" id="kpi-santander-usd"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-full" style="background:#9B3A5A;color:#fff" onclick="openGastoFondo('santander-usd')">+ Gasto</button>
+      <button class="btn btn-s btn-full" onclick="openIngreso('santander-usd')">+ Ingreso</button>
+    </div>
+    <div class="sec-ttl">Movimientos</div>
+    <div id="lista-santander-usd"></div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// ESTADO
+// ═══════════════════════════════════════════
+var SOCIOS=['Emilio','Juan'];
+var SOCIO_COLOR={'Emilio':'var(--emilio)','Juan':'var(--juan)'};
+var DB_KEY='gastos_cq_v1';
+
+function loadDB(){
+  try{var s=JSON.parse(localStorage.getItem(DB_KEY)||'null');if(s)return s;}catch(e){}
+  return {
+    deudaPesos:[], deudaUsd:[],
+    fondoPesosSaldoInicial:0, fondoPesosMovs:[],
+    fondoUsdSaldoInicial:0, fondoUsdMovs:[],
+    santanderSaldoInicial:0, santanderMovs:[],
+    santanderUsdSaldoInicial:0, santanderUsdMovs:[]
+  };
+}
+var DB=loadDB();
+function persist(){localStorage.setItem(DB_KEY,JSON.stringify(DB));}
+
+function fmtN(n,dec){if(n==null||isNaN(n))return '-';dec=dec!=null?dec:2;return parseFloat(n).toLocaleString('es-AR',{maximumFractionDigits:dec});}
+function fmtP(n){return '$'+fmtN(n,0);}
+function fmtU(n){return 'u$s '+fmtN(n,2);}
+function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtFecha(iso){if(!iso)return '';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ═══════════════════════════════════════════
+// HISTORIAL DE DESCRIPCIONES (autocompletar)
+// ═══════════════════════════════════════════
+function getDescHistorial(){
+  var set={};
+  (DB.deudaPesos||[]).forEach(function(g){if(g.desc)set[g.desc]=true;});
+  (DB.deudaUsd||[]).forEach(function(g){if(g.desc)set[g.desc]=true;});
+  (DB.fondoPesosMovs||[]).forEach(function(m){if(m.desc)set[m.desc]=true;});
+  (DB.fondoUsdMovs||[]).forEach(function(m){if(m.desc)set[m.desc]=true;});
+  (DB.santanderMovs||[]).forEach(function(m){if(m.desc)set[m.desc]=true;});
+  (DB.santanderUsdMovs||[]).forEach(function(m){if(m.desc)set[m.desc]=true;});
+  return Object.keys(set).sort();
+}
+function fillDatalists(){
+  var opts=getDescHistorial().map(function(d){return '<option value="'+d.replace(/"/g,'&quot;')+'">';}).join('');
+  ['dl-desc-deuda','dl-desc-fondo','dl-desc-ingreso'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.innerHTML=opts;
+  });
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+function showTab(t){
+  ['deuda-pesos','deuda-usd','fondo-pesos','fondo-usd','santander','santander-usd'].forEach(function(x){
+    document.getElementById('view-'+x).style.display=x===t?'block':'none';
+    document.getElementById('tab-'+x).classList.toggle('active',x===t);
+  });
+  if(t==='deuda-pesos') renderDeuda('pesos');
+  else if(t==='deuda-usd') renderDeuda('usd');
+  else if(t==='fondo-pesos') renderFondo('fondo-pesos');
+  else if(t==='fondo-usd') renderFondo('fondo-usd');
+  else if(t==='santander') renderFondo('santander');
+  else if(t==='santander-usd') renderFondo('santander-usd');
+}
+
+// ═══════════════════════════════════════════
+// DEUDA ENTRE SOCIOS ($ y u$s)
+// ═══════════════════════════════════════════
+function deudaList(moneda){ return moneda==='pesos'?DB.deudaPesos:DB.deudaUsd; }
+function fmtMon(moneda,n){ return moneda==='pesos'?fmtP(n):fmtU(n); }
+
+// Calcula cuánto puso cada socio en total, y la diferencia respecto al reparto igual
+function calcBalance(moneda){
+  var lista=deudaList(moneda);
+  var totalPorSocio={}; SOCIOS.forEach(function(s){totalPorSocio[s]=0;});
+  lista.forEach(function(g){ totalPorSocio[g.pagador]=(totalPorSocio[g.pagador]||0)+g.monto; });
+  var totalGeneral=SOCIOS.reduce(function(s,n){return s+totalPorSocio[n];},0);
+  var partePorSocio=totalGeneral/SOCIOS.length;
+  // diferencia[socio] = lo que puso - lo que le correspondía. Positivo = le deben.
+  var diff={};
+  SOCIOS.forEach(function(s){ diff[s]=totalPorSocio[s]-partePorSocio; });
+  return {totalPorSocio:totalPorSocio,totalGeneral:totalGeneral,partePorSocio:partePorSocio,diff:diff};
+}
+
+function renderBalanza(moneda){
+  var b=calcBalance(moneda);
+  var el=document.getElementById(moneda==='pesos'?'balanza-pesos':'balanza-usd');
+  var s1=SOCIOS[0], s2=SOCIOS[1];
+  var d1=b.diff[s1], d2=b.diff[s2];
+  var maxAbs=Math.max(Math.abs(d1),Math.abs(d2),1);
+  var pct1=50+(d1/maxAbs)*40; // 10-90 range visual
+  pct1=Math.max(8,Math.min(92,pct1));
+
+  var msg, sub;
+  if(Math.abs(d1)<0.5){
+    msg='Están a mano';
+    sub='Cada uno aportó '+fmtMon(moneda,b.partePorSocio);
+  } else if(d1>0){
+    msg=s2+' le debe a '+s1+' <b>'+fmtMon(moneda,Math.abs(d1))+'</b>';
+    sub=s1+' puso '+fmtMon(moneda,b.totalPorSocio[s1])+' · '+s2+' puso '+fmtMon(moneda,b.totalPorSocio[s2]);
+  } else {
+    msg=s1+' le debe a '+s2+' <b>'+fmtMon(moneda,Math.abs(d2))+'</b>';
+    sub=s1+' puso '+fmtMon(moneda,b.totalPorSocio[s1])+' · '+s2+' puso '+fmtMon(moneda,b.totalPorSocio[s2]);
+  }
+
+  var html='<div class="balanza-names"><span style="color:'+SOCIO_COLOR[s1]+'">'+s1+'</span><span style="color:'+SOCIO_COLOR[s2]+'">'+s2+'</span></div>'
+    +'<div class="balanza-bar">'
+    +'<div class="balanza-fill" style="left:0;width:'+pct1+'%;background:'+SOCIO_COLOR[s1]+'"></div>'
+    +'<div class="balanza-fill" style="left:'+pct1+'%;width:'+(100-pct1)+'%;background:'+SOCIO_COLOR[s2]+'"></div>'
+    +'</div>'
+    +'<div class="balanza-msg">'+msg+'</div>'
+    +'<div class="balanza-sub">'+sub+'</div>';
+
+  if(Math.abs(d1)>=0.5){
+    html+='<button class="btn btn-s btn-sm" style="margin-top:12px" onclick="openLiquidar(\''+moneda+'\')">✓ Marcar como liquidado</button>';
+  }
+  el.innerHTML=html;
+}
+
+function renderDeuda(moneda){
+  renderBalanza(moneda);
+  var lista=deudaList(moneda).slice().sort(function(a,b){return b.fecha.localeCompare(a.fecha)||b.id-a.id;});
+  var contId='lista-deuda-'+moneda;
+  if(!lista.length){document.getElementById(contId).innerHTML='<div class="card"><div class="empty">Sin gastos registrados</div></div>';return;}
+  var rows=lista.map(function(g){
+    var isLiq=g.tipo==='liquidacion';
+    return '<div class="gasto-row">'
+      +'<div class="gasto-fecha">'+fmtFecha(g.fecha)+'</div>'
+      +'<div class="gasto-main">'
+      +'<div class="gasto-desc">'+(isLiq?'✓ Liquidación':g.desc||'(sin descripción)')+'</div>'
+      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+SOCIO_COLOR[g.pagador]+';color:#fff">'+g.pagador+'</span>'+(isLiq?'pagó la diferencia':'pagó')+'</div>'
+      +'</div>'
+      +'<div class="gasto-val">'+fmtMon(moneda,g.monto)+'</div>'
+      +'<div class="gasto-actions">'
+      +(isLiq?'':'<button class="icon-btn" onclick="openEditDeuda(\''+moneda+'\','+g.id+')">✎</button>')
+      +'<button class="icon-btn del" onclick="borrarDeuda(\''+moneda+'\','+g.id+')">✕</button>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  document.getElementById(contId).innerHTML='<div class="card">'+rows+'</div>';
+}
+
+var gdMoneda=null, gdEditId=null;
+function openGastoDeuda(moneda){
+  gdMoneda=moneda; gdEditId=null;
+  document.getElementById('gd-ttl').textContent='Nuevo gasto';
+  document.getElementById('gd-monto-label').textContent='Monto '+(moneda==='pesos'?'$':'u$s');
+  document.getElementById('gd-monto').value='';
+  document.getElementById('gd-desc').value='';
+  document.getElementById('gd-fecha').value=todayISO();
+  document.getElementById('gd-payer-chips').innerHTML=SOCIOS.map(function(s,i){
+    return '<button class="payer-chip'+(i===0?' active':'')+'" data-s="'+s+'" onclick="selectPayer(this)">'+s+'</button>';
+  }).join('');
+  fillDatalists();
+  openModal('modal-gasto-deuda');
+}
+function selectPayer(btn){
+  btn.parentElement.querySelectorAll('.payer-chip').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+}
+function openEditDeuda(moneda,id){
+  gdMoneda=moneda; gdEditId=id;
+  var g=deudaList(moneda).find(function(x){return x.id===id;});
+  if(!g) return;
+  document.getElementById('gd-ttl').textContent='Editar gasto';
+  document.getElementById('gd-monto-label').textContent='Monto '+(moneda==='pesos'?'$':'u$s');
+  document.getElementById('gd-monto').value=g.monto;
+  document.getElementById('gd-desc').value=g.desc;
+  document.getElementById('gd-fecha').value=g.fecha;
+  document.getElementById('gd-payer-chips').innerHTML=SOCIOS.map(function(s){
+    return '<button class="payer-chip'+(s===g.pagador?' active':'')+'" data-s="'+s+'" onclick="selectPayer(this)">'+s+'</button>';
+  }).join('');
+  fillDatalists();
+  openModal('modal-gasto-deuda');
+}
+function guardarGastoDeuda(){
+  var monto=parseFloat(document.getElementById('gd-monto').value);
+  var desc=document.getElementById('gd-desc').value.trim();
+  var fecha=document.getElementById('gd-fecha').value;
+  var activeBtn=document.querySelector('#gd-payer-chips .payer-chip.active');
+  var pagador=activeBtn?activeBtn.dataset.s:SOCIOS[0];
+  if(!monto||monto<=0){alert('Ingresá un monto válido');return;}
+  if(!desc){alert('Ingresá una descripción');return;}
+  if(!fecha){alert('Seleccioná una fecha');return;}
+  var lista=deudaList(gdMoneda);
+  if(gdEditId){
+    var idx=lista.findIndex(function(x){return x.id===gdEditId;});
+    if(idx>=0) lista[idx]=Object.assign({},lista[idx],{monto:monto,desc:desc,fecha:fecha,pagador:pagador});
+    toast('✓ Gasto actualizado');
+  } else {
+    lista.push({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador});
+    toast('✓ Gasto registrado: '+fmtMon(gdMoneda,monto));
+  }
+  persist();closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
+}
+function borrarDeuda(moneda,id){
+  var lista=deudaList(moneda);
+  var idx=lista.findIndex(function(x){return x.id===id;});
+  if(idx>=0) lista.splice(idx,1);
+  persist();toast('Eliminado');renderDeuda(moneda);
+}
+
+var liqMoneda=null;
+function openLiquidar(moneda){
+  liqMoneda=moneda;
+  var b=calcBalance(moneda);
+  var s1=SOCIOS[0],s2=SOCIOS[1];
+  var d1=b.diff[s1];
+  var deudor = d1>0?s2:s1;
+  var acreedor = d1>0?s1:s2;
+  var monto=Math.abs(d1);
+  document.getElementById('liquidar-msg').innerHTML='Vas a registrar que <b>'+deudor+'</b> le paga <b>'+fmtMon(moneda,monto)+'</b> a <b>'+acreedor+'</b>, dejando las cuentas iguales.';
+  document.getElementById('liquidar-fecha').value=todayISO();
+  openModal('modal-liquidar');
+}
+function confirmarLiquidar(){
+  var moneda=liqMoneda;
+  var b=calcBalance(moneda);
+  var s1=SOCIOS[0],s2=SOCIOS[1];
+  var d1=b.diff[s1];
+  var deudor = d1>0?s2:s1;
+  var monto=Math.abs(d1);
+  var fecha=document.getElementById('liquidar-fecha').value||todayISO();
+  // El deudor "paga" ese monto como gasto, lo que empareja matemáticamente las cuentas
+  deudaList(moneda).push({id:Date.now(),tipo:'liquidacion',monto:monto,desc:'Liquidación de saldo',fecha:fecha,pagador:deudor});
+  persist();closeModal('modal-liquidar');toast('✓ Cuentas liquidadas');renderDeuda(moneda);
+}
+
+// ═══════════════════════════════════════════
+// FONDO COMÚN $ / U$S / SANTANDER (sin deuda)
+// ═══════════════════════════════════════════
+function fondoConfig(tipo){
+  if(tipo==='fondo-pesos') return {movs:'fondoPesosMovs',saldoInit:'fondoPesosSaldoInicial',fmt:fmtP,label:'$',titulo:'Fondo común $',accent:'#C8882A',accentL:'#F5E6C8'};
+  if(tipo==='fondo-usd') return {movs:'fondoUsdMovs',saldoInit:'fondoUsdSaldoInicial',fmt:fmtU,label:'u$s',titulo:'Fondo común u$s',accent:'#7B3FA0',accentL:'#F0E5F7'};
+  if(tipo==='santander-usd') return {movs:'santanderUsdMovs',saldoInit:'santanderUsdSaldoInicial',fmt:fmtU,label:'u$s',titulo:'Cuenta Santander u$s',accent:'#9B3A5A',accentL:'#F7E5EB'};
+  return {movs:'santanderMovs',saldoInit:'santanderSaldoInicial',fmt:fmtP,label:'$',titulo:'Cuenta Santander',accent:'#C0392B',accentL:'#FDECEA'};
+}
+function fondoSaldo(tipo){
+  var cfg=fondoConfig(tipo);
+  var movs=DB[cfg.movs]||[];
+  var saldo=DB[cfg.saldoInit]||0;
+  movs.forEach(function(m){ saldo += m.tipo==='ingreso'?m.monto:-m.monto; });
+  return saldo;
+}
+function renderFondo(tipo){
+  var cfg=fondoConfig(tipo);
+  var movs=(DB[cfg.movs]||[]).slice().sort(function(a,b){return a.fecha.localeCompare(b.fecha)||a.id-b.id;});
+  var saldo=fondoSaldo(tipo);
+  var totalIngresos=(DB[cfg.saldoInit]||0)+movs.filter(function(m){return m.tipo==='ingreso';}).reduce(function(s,m){return s+m.monto;},0);
+  var totalGastos=movs.filter(function(m){return m.tipo==='gasto';}).reduce(function(s,m){return s+m.monto;},0);
+
+  var kpiId='kpi-'+tipo;
+  document.getElementById(kpiId).innerHTML=
+    '<div class="kpi fondo" style="border-color:'+cfg.accent+'33"><div class="kpi-label" style="color:'+cfg.accent+'">Saldo actual</div><div class="kpi-val" style="color:'+cfg.accent+'">'+cfg.fmt(saldo)+'</div><div class="kpi-sub">'+cfg.titulo+'</div></div>'
+    +'<div class="kpi'+(saldo<0?' warn':'')+'"><div class="kpi-label">Total gastado</div><div class="kpi-val">'+cfg.fmt(totalGastos)+'</div><div class="kpi-sub">'+movs.filter(function(m){return m.tipo==='gasto';}).length+' gastos</div></div>';
+
+  var listaId='lista-'+tipo;
+  var sortedDesc=movs.slice().sort(function(a,b){return b.fecha.localeCompare(a.fecha)||b.id-a.id;});
+  if(!sortedDesc.length && !(DB[cfg.saldoInit])){
+    document.getElementById(listaId).innerHTML='<div class="card"><div class="empty">Sin movimientos. Usá "+ Ingreso" para cargar el saldo inicial.</div></div>';
+    return;
+  }
+  var rows=sortedDesc.map(function(m){
+    var isIng=m.tipo==='ingreso';
+    return '<div class="gasto-row">'
+      +'<div class="gasto-fecha">'+fmtFecha(m.fecha)+'</div>'
+      +'<div class="gasto-main"><div class="gasto-desc">'+(m.desc||(isIng?'Ingreso':'Gasto'))+'</div>'
+      +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+(isIng?'#EBF7F0':cfg.accentL)+';color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'INGRESO':'GASTO')+'</span></div></div>'
+      +'<div class="gasto-val" style="color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'+':'-')+cfg.fmt(m.monto)+'</div>'
+      +'<div class="gasto-actions"><button class="icon-btn" onclick="openEditFondoMov(\''+tipo+'\','+m.id+')">✎</button><button class="icon-btn del" onclick="borrarFondoMov(\''+tipo+'\','+m.id+')">✕</button></div>'
+      +'</div>';
+  }).join('');
+  document.getElementById(listaId).innerHTML='<div class="card">'+rows+'</div>';
+}
+
+var gfTipo=null, gfEditId=null;
+function openGastoFondo(tipo){
+  gfTipo=tipo; gfEditId=null;
+  var cfg=fondoConfig(tipo);
+  document.getElementById('gf-ttl').textContent='Nuevo gasto · '+cfg.titulo;
+  document.getElementById('gf-monto-label').textContent='Monto '+cfg.label;
+  document.getElementById('gf-monto').value='';
+  document.getElementById('gf-desc').value='';
+  document.getElementById('gf-fecha').value=todayISO();
+  fillDatalists();
+  openModal('modal-gasto-fondo');
+}
+function openEditFondoMov(tipo,id){
+  var cfg=fondoConfig(tipo);
+  var m=(DB[cfg.movs]||[]).find(function(x){return x.id===id;});
+  if(!m) return;
+  if(m.tipo==='ingreso'){
+    gfTipo=null;
+    openEditIngreso(tipo,id);
+    return;
+  }
+  gfTipo=tipo; gfEditId=id;
+  document.getElementById('gf-ttl').textContent='Editar gasto';
+  document.getElementById('gf-monto-label').textContent='Monto '+cfg.label;
+  document.getElementById('gf-monto').value=m.monto;
+  document.getElementById('gf-desc').value=m.desc;
+  document.getElementById('gf-fecha').value=m.fecha;
+  fillDatalists();
+  openModal('modal-gasto-fondo');
+}
+function guardarGastoFondo(){
+  var monto=parseFloat(document.getElementById('gf-monto').value);
+  var desc=document.getElementById('gf-desc').value.trim();
+  var fecha=document.getElementById('gf-fecha').value;
+  if(!monto||monto<=0){alert('Ingresá un monto válido');return;}
+  if(!desc){alert('Ingresá una descripción');return;}
+  if(!fecha){alert('Seleccioná una fecha');return;}
+  var cfg=fondoConfig(gfTipo);
+  if(!DB[cfg.movs])DB[cfg.movs]=[];
+  if(gfEditId){
+    var idx=DB[cfg.movs].findIndex(function(x){return x.id===gfEditId;});
+    if(idx>=0) DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:desc,fecha:fecha});
+    toast('✓ Gasto actualizado');
+  } else {
+    DB[cfg.movs].push({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha});
+    toast('✓ Gasto registrado: '+cfg.fmt(monto));
+  }
+  persist();closeModal('modal-gasto-fondo');renderFondo(gfTipo);
+}
+
+var ingTipo=null, ingEditId=null;
+function openIngreso(tipo){
+  ingTipo=tipo; ingEditId=null;
+  var cfg=fondoConfig(tipo);
+  document.getElementById('ing-ttl').textContent='Registrar ingreso · '+cfg.titulo;
+  document.getElementById('ing-monto-label').textContent='Monto '+cfg.label;
+  document.getElementById('ing-monto').value='';
+  document.getElementById('ing-desc').value='';
+  document.getElementById('ing-fecha').value=todayISO();
+  fillDatalists();
+  openModal('modal-ingreso');
+}
+function openEditIngreso(tipo,id){
+  ingTipo=tipo; ingEditId=id;
+  var cfg=fondoConfig(tipo);
+  var m=(DB[cfg.movs]||[]).find(function(x){return x.id===id;});
+  if(!m) return;
+  document.getElementById('ing-ttl').textContent='Editar ingreso';
+  document.getElementById('ing-monto-label').textContent='Monto '+cfg.label;
+  document.getElementById('ing-monto').value=m.monto;
+  document.getElementById('ing-desc').value=m.desc;
+  document.getElementById('ing-fecha').value=m.fecha;
+  fillDatalists();
+  openModal('modal-ingreso');
+}
+function guardarIngreso(){
+  var monto=parseFloat(document.getElementById('ing-monto').value);
+  var desc=document.getElementById('ing-desc').value.trim();
+  var fecha=document.getElementById('ing-fecha').value;
+  if(!monto||monto<=0){alert('Ingresá un monto válido');return;}
+  if(!desc){alert('Ingresá una descripción');return;}
+  if(!fecha){alert('Seleccioná una fecha');return;}
+  var cfg=fondoConfig(ingTipo);
+  if(!DB[cfg.movs])DB[cfg.movs]=[];
+  if(ingEditId){
+    var idx=DB[cfg.movs].findIndex(function(x){return x.id===ingEditId;});
+    if(idx>=0) DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:desc,fecha:fecha});
+    toast('✓ Ingreso actualizado');
+  } else {
+    DB[cfg.movs].push({id:Date.now(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha});
+    toast('✓ Ingreso registrado: '+cfg.fmt(monto));
+  }
+  persist();closeModal('modal-ingreso');renderFondo(ingTipo);
+}
+function borrarFondoMov(tipo,id){
+  var cfg=fondoConfig(tipo);
+  DB[cfg.movs]=(DB[cfg.movs]||[]).filter(function(x){return x.id!==id;});
+  persist();toast('Eliminado');renderFondo(tipo);
+}
+
+// ═══════════════════════════════════════════
+// MODAL CLOSE ON BG CLICK
+// ═══════════════════════════════════════════
+document.querySelectorAll('.modal-bg').forEach(function(m){
+  m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});
+});
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+showTab('deuda-pesos');
+</script>
+</body>
+</html>
