@@ -1,9 +1,8 @@
 {
-  "name": "CQ Caja",
+  "name": "CQ Caja - Desarrollista",
   "short_name": "CQ Caja",
-  "start_url": "/",
   "display": "standalone",
-  "background_color": "#F5F3EF",
+  "background_color": "#1C3D35",
   "theme_color": "#1C3D35",
   "icons": [
     {
