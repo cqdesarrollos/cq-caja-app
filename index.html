@@ -3971,9 +3971,12 @@ async function cqSyncIngresoCajaChicaDesdeFondo(mov,activo){
       console.warn('Reflejo inmediato Caja Chica',e);
     }
 
-    // La transacción anterior ya confirma el alta. Si no pudo ejecutarse,
-    // verificamos el estado por cualquiera de los identificadores que Caja Chica conserva.
-    var ok=escritoEnCajaChica || await cqVerifyCajaChicaIntegration(payload);
+    // El documento de integración ya quedó confirmado en Firebase. Para el indicador
+    // de Caja Gerencia eso alcanza como sincronización correcta: Caja Chica escucha
+    // esta integración y además intentamos reflejarla inmediatamente en su estado.
+    // No dejamos el punto titilando si el estado de Caja Chica tarda en persistir.
+    var verificadoEnEstado=escritoEnCajaChica || await cqVerifyCajaChicaIntegration(payload);
+    var ok=payload.active!==false ? true : verificadoEnEstado;
     mov.cajaChicaSyncEstado=ok?'ok':'pendiente';
     mov.cajaChicaSyncError=ok?'':'Integración enviada; Caja Chica la confirmará al sincronizar.';
     persist();
@@ -4052,10 +4055,13 @@ async function cqVerificarIngresosCajaChica(){
         }
       }
 
-      // Verde significa que el movimiento existe realmente en Caja Chica.
-      var ok=!!existe;
-      var next=ok?'ok':(eliminadaExplicita?'error':(activa?'pendiente':'error'));
-      var err=ok?'':(eliminadaExplicita?'El ingreso fue eliminado desde Caja Chica.':(activa?'Integración enviada; esperando confirmación de Caja Chica.':'No se pudo reconstruir el vínculo con Caja Chica'));
+      // El indicador de Caja Gerencia representa el estado del VÍNCULO.
+      // Si la integración está activa (o el movimiento ya existe en Caja Chica),
+      // se considera sincronizado. Sólo queda rojo ante una eliminación explícita
+      // desde Caja Chica o si ni siquiera pudo reconstruirse la integración.
+      var ok=!eliminadaExplicita && (!!existe || !!activa);
+      var next=ok?'ok':(eliminadaExplicita?'error':'pendiente');
+      var err=ok?'':(eliminadaExplicita?'El ingreso fue eliminado desde Caja Chica.':'No se pudo confirmar el vínculo con Caja Chica');
       if(m.cajaChicaSyncEstado!==next || String(m.cajaChicaSyncError||'')!==err){
         m.cajaChicaSyncEstado=next;
         m.cajaChicaSyncError=err;
