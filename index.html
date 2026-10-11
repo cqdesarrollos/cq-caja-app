@@ -1,4 +1,4 @@
-<!-- CQ Caja Gerencia · build ingresos-gastos-resumen + caja chica autorrepara · 2026-10-11 -->
+<!-- CQ Caja Gerencia · build caja-chica-v2 histórica + ingresos gastos resumen · 2026-10-11 -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -3925,10 +3925,23 @@ async function cqBestEffortCajaChicaState(payload){
 }
 function cqCajaChicaMovimientoCoincide(x,payload){
   if(!x||!payload)return false;
-  return String(x.id||'')===String(payload.integrationId)
+  var porId=String(x.id||'')===String(payload.integrationId)
     || String(x.integrationId||'')===String(payload.integrationId)
     || String(x.cajaGerenciaOrigenId||'')===String(payload.sourceMovementId)
     || String(x.sourceMovementId||'')===String(payload.sourceMovementId);
+  if(porId)return true;
+
+  // Compatibilidad con ingresos históricos creados correctamente en Caja Chica
+  // antes de que ambos módulos compartieran el mismo identificador. Sólo se
+  // acepta la coincidencia si el propio movimiento declara origen Caja Gerencia.
+  var esCajaGerencia=String(x.origen||'')==='cq_caja_gerencia'
+    || x.cajaGerenciaVinculado===true
+    || String(x.sourceLabel||'').indexOf('Caja Gerencia')>=0;
+  if(!esCajaGerencia)return false;
+  var mismaFecha=!payload.date || String(x.date||'')===String(payload.date||'');
+  var mismoMonto=(payload.amount==null) || Math.abs((Number(x.amount)||0)-(Number(payload.amount)||0))<0.01;
+  var mismasNotas=!payload.notes || String(x.notes||'').trim()===String(payload.notes||'').trim();
+  return mismaFecha&&mismoMonto&&mismasNotas;
 }
 async function cqVerifyCajaChicaIntegration(payload){
   var f=window._cqFirebase;
@@ -4003,22 +4016,36 @@ async function cqVerificarIngresosCajaChica(){
       var intg=ints.find(function(x){
         return x&&(String(x.integrationId||'')===iid || String(x.sourceMovementId||'')===String(m.id));
       });
-      var payloadCheck={integrationId:iid,sourceMovementId:String(m.id)};
+      var payloadCheck=cqCajaChicaIntegrationPayload(m,true);
       var existe=ccMovs.some(function(x){return cqCajaChicaMovimientoCoincide(x,payloadCheck);});
       var fueBorrado=deleted.indexOf(iid)>=0 || deleted.indexOf(String(m.id))>=0;
-      var activa=!!(intg&&intg.active!==false&&!intg.deletedFromCajaChica);
+      var eliminadaExplicita=!!(intg&&(intg.active===false||intg.deletedFromCajaChica===true));
+      var activa=!!(intg&&!eliminadaExplicita);
 
-      // Autorreparación: si la integración sigue activa pero Caja Chica todavía
-      // no refleja el movimiento (o conserva una marca de borrado antigua),
-      // volver a escribir el vínculo de forma transaccional. Así evitamos que
-      // quede eternamente titilando en "pendiente" cuando el alta es válida.
-      if(activa&&(!existe||fueBorrado)){
+      // Reparar también movimientos históricos que en Caja Gerencia quedaron
+      // marcados como enviados a Caja Chica pero no conservan el documento de
+      // integración. Caja Gerencia es la fuente del vínculo, salvo que Caja Chica
+      // haya registrado una eliminación explícita.
+      if(!eliminadaExplicita&&!intg){
         try{
-          var payloadReparacion=cqCajaChicaIntegrationPayload(m,true);
-          var reparado=await cqBestEffortCajaChicaState(payloadReparacion);
+          await cqUpsertCajaChicaIntegration(payloadCheck);
+          intg=payloadCheck;
+          activa=true;
+        }catch(eInt){
+          console.warn('Recrear integración Caja Chica',eInt);
+        }
+      }
+
+      // Si el movimiento no está en el estado remoto (o quedó una baja antigua),
+      // volver a escribirlo. Si ya existe como ingreso histórico compatible,
+      // NO lo duplicamos: sólo se recrea arriba el documento de integración.
+      if(!eliminadaExplicita&&(!existe||fueBorrado)){
+        try{
+          var reparado=await cqBestEffortCajaChicaState(payloadCheck);
           if(reparado){
             existe=true;
             fueBorrado=false;
+            activa=true;
           }
         }catch(eRepair){
           console.warn('Autorreparación Caja Chica',eRepair);
@@ -4026,11 +4053,9 @@ async function cqVerificarIngresosCajaChica(){
       }
 
       // Verde significa que el movimiento existe realmente en Caja Chica.
-      // Una marca de borrado vieja no debe mantenerlo rojo si el movimiento
-      // ya fue recreado y está presente.
       var ok=!!existe;
-      var next=ok?'ok':(activa?'pendiente':'error');
-      var err=ok?'':(activa?'Integración enviada; esperando confirmación de Caja Chica.':'El ingreso vinculado ya no existe en Caja Chica');
+      var next=ok?'ok':(eliminadaExplicita?'error':(activa?'pendiente':'error'));
+      var err=ok?'':(eliminadaExplicita?'El ingreso fue eliminado desde Caja Chica.':(activa?'Integración enviada; esperando confirmación de Caja Chica.':'No se pudo reconstruir el vínculo con Caja Chica'));
       if(m.cajaChicaSyncEstado!==next || String(m.cajaChicaSyncError||'')!==err){
         m.cajaChicaSyncEstado=next;
         m.cajaChicaSyncError=err;
@@ -4044,9 +4069,14 @@ async function cqVerificarIngresosCajaChica(){
     cqVerificandoCajaChica=false;
   }
 }
-// Verificación puntual al abrir. Se eliminó el polling cada 8 s y los disparos por focus/visibility
-// para reducir lecturas. Las altas/bajas siguen verificándose dentro de su propio flujo de sincronización.
-setTimeout(cqVerificarIngresosCajaChica,1600);
+// Verificación al abrir: dos intentos cortos, sin polling permanente. El segundo
+// cubre el caso en que la Caja remota termina de cargar después de pintar la UI.
+function cqProgramarVerificacionCajaChica(){
+  setTimeout(cqVerificarIngresosCajaChica,700);
+  setTimeout(cqVerificarIngresosCajaChica,3200);
+}
+document.addEventListener('cq-firebase-ready',cqProgramarVerificacionCajaChica);
+cqProgramarVerificacionCajaChica();
 
 // ═══════════════════════════════════════════
 // DETALLE DE OPERACIONES VINCULADAS USD -> ARS
