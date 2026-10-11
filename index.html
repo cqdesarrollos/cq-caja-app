@@ -1327,14 +1327,60 @@ body{overflow-x:hidden!important}
 </div>
 
 <!-- MODAL: ingreso a fondo/cuenta -->
+<style id="cq-ingreso-integraciones-style">
+  #modal-ingreso .modal{max-width:620px}
+  .cq-ing-section{margin-top:14px;border:1px solid #DCE7E1;border-radius:14px;background:#FBFDFC;overflow:hidden}
+  .cq-ing-section-hd{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 13px;background:linear-gradient(135deg,#F7FBF8,#EFF7F3);border-bottom:1px solid #E4ECE7}
+  .cq-ing-section-hd b{display:block;font-size:12px;color:#214439}
+  .cq-ing-section-hd small{display:block;margin-top:2px;font-size:9.5px;color:#88A095;font-weight:700}
+  .cq-ing-fields{padding:12px 13px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .cq-ing-fields.off{display:none}
+  .cq-ing-fields .fld{margin:0}
+  .cq-ing-fields .full{grid-column:1/-1}
+  .cq-ing-note{grid-column:1/-1;padding:8px 10px;border-radius:9px;background:#F3F7F4;color:#6F877B;font-size:9.5px;line-height:1.35;font-weight:700}
+  .cq-ing-fin-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#F4F7FB;border:1px solid #DFE7EF;font-size:10px;color:#5C7181;font-weight:800}
+  .cq-ing-fin-preview strong{color:#173F35;font-family:'JetBrains Mono',monospace;font-size:11px}
+  @media(max-width:600px){
+    #modal-ingreso .modal{width:min(96vw,620px)}
+    .cq-ing-fields{grid-template-columns:1fr;padding:10px}
+    .cq-ing-fields .full,.cq-ing-note,.cq-ing-fin-preview{grid-column:1}
+  }
+</style>
 <div class="modal-bg" id="modal-ingreso">
   <div class="modal">
     <div class="modal-hd"><span class="modal-ttl" id="ing-ttl">Registrar ingreso</span><button class="modal-x" onclick="closeModal('modal-ingreso')">×</button></div>
     <div class="mbody">
-      <div class="fld"><label id="ing-monto-label">Monto</label><input type="number" id="ing-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fld"><label id="ing-monto-label">Monto</label><input type="number" id="ing-monto" min="0" step="0.01" placeholder="0" oninput="cqIngresoActualizarPreview()"></div>
       <div class="fld"><label>Origen / notas *</label><input type="text" id="ing-desc" list="dl-desc-ingreso" placeholder="ej: Aporte de socios"></div>
       <datalist id="dl-desc-ingreso"></datalist>
-      <div class="fld"><label>Fecha</label><input type="date" id="ing-fecha"></div>
+      <div class="fld"><label>Fecha</label><input type="date" id="ing-fecha" onchange="cqIngresoActualizarPreview()"></div>
+
+      <div class="cq-ing-section">
+        <div class="cq-ing-section-hd">
+          <span><b>↩️ Enviar a Gastos como ingreso</b><small>Se registra igual que “Agregar ingreso” en la planilla Gastos</small></span>
+          <label class="cq-switch" aria-label="Enviar ingreso a Gastos"><input type="checkbox" id="ing-gastos-toggle" onchange="cqIngresoToggleSecciones()"><span class="cq-switch-slider"></span></label>
+        </div>
+        <div class="cq-ing-fields off" id="ing-gastos-fields">
+          <div class="fld full"><label>Obra</label><select id="ing-gastos-obra" onchange="cqIngresoObraGastosChanged()"><option value="">Seleccionar obra...</option></select></div>
+          <div class="fld"><label>Categoría</label><select id="ing-gastos-rubro" onchange="cqIngresoRubroChanged()"><option value="">Seleccionar categoría...</option></select></div>
+          <div class="fld"><label>Subrubro</label><select id="ing-gastos-subrubro"><option value="">Seleccionar subrubro...</option></select></div>
+          <div class="cq-ing-note">Usa exactamente la fecha, moneda y monto de Caja Gerencia. En Gastos se guarda como <b>ingreso</b> (monto negativo), igual que si lo cargaras desde “Agregar ingreso”.</div>
+        </div>
+      </div>
+
+      <div class="cq-ing-section">
+        <div class="cq-ing-section-hd">
+          <span><b>📊 Cargar en Resumen financiero</b><small>Precio inicial, cuota o comisión de una unidad</small></span>
+          <label class="cq-switch" aria-label="Cargar en Resumen financiero"><input type="checkbox" id="ing-fin-toggle" onchange="cqIngresoToggleSecciones();cqIngresoActualizarPreview()"><span class="cq-switch-slider"></span></label>
+        </div>
+        <div class="cq-ing-fields off" id="ing-fin-fields">
+          <div class="fld full"><label>Obra</label><select id="ing-fin-obra"><option value="">Seleccionar obra...</option></select></div>
+          <div class="fld"><label>Unidad</label><select id="ing-fin-unidad"><option value="">Seleccionar unidad...</option><option value="A">Unidad A</option><option value="B">Unidad B</option></select></div>
+          <div class="fld"><label>Cargar como</label><select id="ing-fin-tipo" onchange="cqIngresoActualizarPreview()"><option value="">Seleccionar...</option><option value="precio">Precio inicial</option><option value="cuota">Cuota</option><option value="comision">Comisión</option></select></div>
+          <div class="cq-ing-fin-preview"><span>Monto que llegará al Resumen financiero</span><strong id="ing-fin-preview">U$S 0</strong></div>
+          <div class="cq-ing-note">La fecha se toma de este ingreso de Caja Gerencia. Para Precio inicial y Cuota se usa su mes; la fecha exacta también queda guardada en la integración. En cuentas en pesos el monto se convierte a U$S con el TC de Caja.</div>
+        </div>
+      </div>
     </div>
     <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-ingreso')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarIngreso()">Guardar</button></div>
   </div>
@@ -3368,9 +3414,17 @@ function cqMaterialesDotHTML(mov){
 function cqDualSyncHTML(mov){
   var g=cqSyncDotHTML(mov);
   var mat=cqMaterialesDotHTML(mov);
-  var cc=mov&&mov.cajaChicaIngreso
-    ?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Caja chica</span><span class="cq-gastos-sync-dot '+(mov.cajaChicaSyncEstado==='ok'?'ok':'')+'" title="'+(mov.cajaChicaSyncEstado==='ok'?'Ingreso sincronizado con Caja Chica':(mov.cajaChicaSyncError||'Pendiente de sincronizar con Caja Chica'))+'"></span></span>'
-    :'';
+  var cc='';
+  if(mov&&mov.cajaChicaIngreso){
+    var ccSt=mov.cajaChicaSyncEstado||'pendiente';
+    var ccCls=ccSt==='ok'?'ok':(ccSt==='pendiente'?'wait':'');
+    var ccTitle=ccSt==='ok'
+      ?'Ingreso sincronizado con Caja Chica'
+      :(ccSt==='pendiente'
+        ?'Verificando ingreso en Caja Chica…'
+        :(mov.cajaChicaSyncError||'No se pudo verificar el ingreso en Caja Chica'));
+    cc='<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Caja chica</span><span class="cq-gastos-sync-dot '+ccCls+'" title="'+escapeHTML(ccTitle)+'"></span></span>';
+  }
   return '<span class="cq-sync-pair">'
     +(g?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Gastos</span>'+g+'</span>':'')
     +(mat?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Materiales</span>'+mat+'</span>':'')
@@ -3642,7 +3696,7 @@ function borrarDeuda(moneda,id){
   var lista=deudaList(moneda);
   var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+fmtMon(moneda,mov.monto)) : 'este movimiento';
-  if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
+  if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   var idx=lista.findIndex(function(x){return x.id===id;});
   if(idx>=0) lista.splice(idx,1);
   if(mov&&(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'))cqBorrarIngresosCambio(mov.id);
@@ -3804,10 +3858,10 @@ async function cqUpsertCajaChicaIntegration(payload){
   });
 }
 async function cqBestEffortCajaChicaState(payload){
-  // Reflejo inmediato. La integración separada queda como fuente durable
-  // para que Caja Chica lo reincorpore si su propio sync pisa el documento.
+  // Reflejo inmediato. Si esta transacción termina bien, el movimiento ya quedó
+  // escrito en el estado de Caja Chica y puede mostrarse como sincronizado.
   var f=window._cqFirebase;
-  if(!f||!f.runTransaction||!f.doc)return;
+  if(!f||!f.runTransaction||!f.doc)return false;
   var ref=f.doc(f.db,'caja_chica_app','main');
   await f.runTransaction(f.db,async function(tx){
     var snap=await tx.get(ref);
@@ -3858,6 +3912,14 @@ async function cqBestEffortCajaChicaState(payload){
       updatedBy:payload.updatedBy
     },{merge:true});
   });
+  return true;
+}
+function cqCajaChicaMovimientoCoincide(x,payload){
+  if(!x||!payload)return false;
+  return String(x.id||'')===String(payload.integrationId)
+    || String(x.integrationId||'')===String(payload.integrationId)
+    || String(x.cajaGerenciaOrigenId||'')===String(payload.sourceMovementId)
+    || String(x.sourceMovementId||'')===String(payload.sourceMovementId);
 }
 async function cqVerifyCajaChicaIntegration(payload){
   var f=window._cqFirebase;
@@ -3866,10 +3928,7 @@ async function cqVerifyCajaChicaIntegration(payload){
     var snap=await f.getDoc(f.doc(f.db,'caja_chica_app','main'));
     var state=snap.exists()&&snap.data()?snap.data().state:null;
     var movs=state&&Array.isArray(state.movements)?state.movements:[];
-    var found=movs.some(function(x){
-      return String(x.id)===String(payload.integrationId)
-        || String(x.cajaGerenciaOrigenId||'')===String(payload.sourceMovementId);
-    });
+    var found=movs.some(function(x){return cqCajaChicaMovimientoCoincide(x,payload);});
     return payload.active?found:!found;
   }catch(e){return false;}
 }
@@ -3883,11 +3942,16 @@ async function cqSyncIngresoCajaChicaDesdeFondo(mov,activo){
   try{renderFondo('fondo-pesos');}catch(_e){}
   try{
     await cqUpsertCajaChicaIntegration(payload);
-    try{await cqBestEffortCajaChicaState(payload);}catch(e){
+    var escritoEnCajaChica=false;
+    try{
+      escritoEnCajaChica=await cqBestEffortCajaChicaState(payload);
+    }catch(e){
       console.warn('Reflejo inmediato Caja Chica',e);
     }
 
-    var ok=await cqVerifyCajaChicaIntegration(payload);
+    // La transacción anterior ya confirma el alta. Si no pudo ejecutarse,
+    // verificamos el estado por cualquiera de los identificadores que Caja Chica conserva.
+    var ok=escritoEnCajaChica || await cqVerifyCajaChicaIntegration(payload);
     mov.cajaChicaSyncEstado=ok?'ok':'pendiente';
     mov.cajaChicaSyncError=ok?'':'Integración enviada; Caja Chica la confirmará al sincronizar.';
     persist();
@@ -3929,15 +3993,15 @@ async function cqVerificarIngresosCajaChica(){
       var intg=ints.find(function(x){
         return x&&(String(x.integrationId||'')===iid || String(x.sourceMovementId||'')===String(m.id));
       });
-      var existe=ccMovs.some(function(x){
-        return String(x.id||'')===iid || String(x.cajaGerenciaOrigenId||'')===String(m.id);
-      });
+      var payloadCheck={integrationId:iid,sourceMovementId:String(m.id)};
+      var existe=ccMovs.some(function(x){return cqCajaChicaMovimientoCoincide(x,payloadCheck);});
       var fueBorrado=deleted.indexOf(iid)>=0;
       var activa=!!(intg&&intg.active!==false&&!intg.deletedFromCajaChica);
-      // Estado visual: si existe actualmente y la integración está activa, queda OK.
-      var ok=existe&&activa;
-      var next=ok?'ok':'error';
-      var err=ok?'':'El ingreso vinculado ya no existe en Caja Chica';
+      // El punto verde representa que el movimiento existe realmente en Caja Chica.
+      // La integración puede ser consumida/limpiada después de procesarse y no debe volverlo rojo.
+      var ok=existe&&!fueBorrado;
+      var next=ok?'ok':(activa?'pendiente':'error');
+      var err=ok?'':(activa?'Integración enviada; esperando confirmación de Caja Chica.':'El ingreso vinculado ya no existe en Caja Chica');
       if(m.cajaChicaSyncEstado!==next || String(m.cajaChicaSyncError||'')!==err){
         m.cajaChicaSyncEstado=next;
         m.cajaChicaSyncError=err;
@@ -4128,10 +4192,10 @@ function renderFondo(tipo){
       +'<div class="gasto-fecha">'+fmtFecha(m.fecha)+'</div>'
       +'<div class="gasto-main"><div class="gasto-desc">'+(isIng?(m.desc||'Ingreso'):((tipo==='fondo-pesos'||tipo==='santander')?cqCajaTituloMovimiento(m,'Gasto'):(m.desc||'Gasto')))+badgeNuevo(m)+'</div>'
       +'<div class="gasto-meta"><span class="gasto-tag" style="background:'+(isIng?'#EBF7F0':cfg.accentL)+';color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'INGRESO':'GASTO')+'</span>'+(m.tc?' TC '+m.tc:'')+'</div>'
-      +(!isIng&&(tipo==='fondo-pesos'||tipo==='santander')?cqCajaDetalleImputacion(m):'')+'</div>'
+      +(isIng?cqIngresoDetalleIntegracion(m):((tipo==='fondo-pesos'||tipo==='santander')?cqCajaDetalleImputacion(m):''))+'</div>'
       +'<div class="gasto-val" style="color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'+':'-')+cfg.fmt(m.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(!isIng&&(tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m):'')
+      +(isIng?cqIngresoSyncHTML(m):((tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m):''))
       +'<button class="icon-btn" onclick="cqOpenEditFondoMovSmart(\''+tipo+'\','+m.id+')" title="Ver / editar movimiento">✎</button><button class="icon-btn del" onclick="borrarFondoMov(\''+tipo+'\','+m.id+')">✕</button></div>'
       +'</div>';
   }).join('');
@@ -4279,8 +4343,278 @@ async function guardarGastoFondo(){
     cqLanzarSyncMaterialesCaja(movSync,oldSync);
   }
   if(tipoSync==='fondo-pesos'&&movSync){
-    cqSyncIngresoCajaChicaDesdeFondo(movSync,ingresoCajaChicaSolicitado);
+    await cqSyncIngresoCajaChicaDesdeFondo(movSync,ingresoCajaChicaSolicitado);
   }
+}
+
+// ═══════════════════════════════════════════
+// INGRESOS DE CAJA → GASTOS / RESUMEN FINANCIERO
+// ═══════════════════════════════════════════
+function cqIngresoMoneda(tipo){
+  return (tipo==='fondo-usd'||tipo==='santander-usd')?'usd':'ars';
+}
+function cqIngresoTC(){
+  var tc=Number(getLastTC())||0;
+  if(!tc&&CQ_GASTOS_CONFIG_FIREBASE)tc=Number(CQ_GASTOS_CONFIG_FIREBASE.defaultTC)||0;
+  return tc;
+}
+function cqIngresoMontoUSD(tipo,monto,tc){
+  monto=Number(monto)||0;
+  if(cqIngresoMoneda(tipo)==='usd')return monto;
+  tc=Number(tc)||0;
+  return tc>0?monto/tc:0;
+}
+function cqIngresoToggleSecciones(){
+  var tg=document.getElementById('ing-gastos-toggle');
+  var tf=document.getElementById('ing-fin-toggle');
+  var fg=document.getElementById('ing-gastos-fields');
+  var ff=document.getElementById('ing-fin-fields');
+  if(fg)fg.classList.toggle('off',!(tg&&tg.checked));
+  if(ff)ff.classList.toggle('off',!(tf&&tf.checked));
+}
+function cqIngresoRenderObras(data){
+  var obras=cqImputacionObras();
+  var g=document.getElementById('ing-gastos-obra');
+  var f=document.getElementById('ing-fin-obra');
+  if(g){
+    var cur=(data&&data.ingresoGastosObraId)||g.value||'';
+    g.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    if(cur&&obras.some(function(o){return String(o.id)===String(cur);}))g.value=cur;
+  }
+  if(f){
+    var curF=(data&&data.ingresoFinObraId)||f.value||'';
+    var finObras=obras.filter(function(o){return String(o.id)!=='oficina';});
+    f.innerHTML='<option value="">Seleccionar obra...</option>'+finObras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    if(curF&&finObras.some(function(o){return String(o.id)===String(curF);}))f.value=curF;
+  }
+}
+function cqIngresoObraGastosChanged(selectedRubro,selectedSub){
+  var obra=document.getElementById('ing-gastos-obra');
+  var rub=document.getElementById('ing-gastos-rubro');
+  if(!obra||!rub)return;
+  var oficina=String(obra.value)==='oficina';
+  if(oficina){
+    rub.innerHTML='<option value="ofi">Oficina / gastos generales</option>';
+    rub.value='ofi';
+    rub.disabled=true;
+  }else{
+    rub.disabled=false;
+    rub.innerHTML='<option value="">Seleccionar categoría...</option>'+CQ_IMPUTACION_RUBROS.map(function(r){return '<option value="'+r.id+'">'+escapeHTML(r.label)+'</option>';}).join('');
+    if(selectedRubro&&CQ_IMPUTACION_RUBROS.some(function(r){return r.id===selectedRubro;}))rub.value=selectedRubro;
+  }
+  cqIngresoRubroChanged(selectedSub);
+}
+function cqIngresoRubroChanged(selectedSub){
+  var rub=document.getElementById('ing-gastos-rubro');
+  var sub=document.getElementById('ing-gastos-subrubro');
+  if(!rub||!sub)return;
+  var arr=cqImpSubrubros(rub.value||'');
+  sub.innerHTML='<option value="">Seleccionar subrubro...</option>'+arr.map(function(x){return '<option value="'+escapeHTML(x.id)+'">'+escapeHTML(x.label)+'</option>';}).join('');
+  if(selectedSub){
+    var m=arr.find(function(x){return String(x.id)===String(selectedSub)||String(x.label)===String(selectedSub);});
+    if(m)sub.value=m.id;
+  }
+}
+function cqIngresoActualizarPreview(){
+  var el=document.getElementById('ing-fin-preview');if(!el)return;
+  var monto=Number(document.getElementById('ing-monto')&&document.getElementById('ing-monto').value)||0;
+  var usd=cqIngresoMontoUSD(ingTipo,monto,cqIngresoTC());
+  if(monto>0&&cqIngresoMoneda(ingTipo)==='ars'&&!cqIngresoTC())el.textContent='U$S — (falta TC)';
+  else el.textContent=fmtU(usd||0);
+}
+function cqIngresoInit(data){
+  data=data||null;
+  var tg=document.getElementById('ing-gastos-toggle');
+  var tf=document.getElementById('ing-fin-toggle');
+  if(tg)tg.checked=!!(data&&data.ingresoGastosAgregar);
+  if(tf)tf.checked=!!(data&&data.ingresoFinAgregar);
+  var unidad=document.getElementById('ing-fin-unidad');
+  var tipo=document.getElementById('ing-fin-tipo');
+  if(unidad)unidad.value=(data&&data.ingresoFinUnidad)||'';
+  if(tipo)tipo.value=(data&&data.ingresoFinTipo)||'';
+  cqIngresoToggleSecciones();
+  cqIngresoRenderObras(data);
+  cqIngresoObraGastosChanged((data&&data.ingresoGastosRubro)||'',(data&&data.ingresoGastosSubrubro)||'');
+  cqIngresoActualizarPreview();
+  if(!CQ_GASTOS_CONFIG_FIREBASE&&window._cqFirebase){
+    cqLoadGastosConfigFirebase().then(function(){
+      cqIngresoRenderObras(data);
+      cqIngresoObraGastosChanged((data&&data.ingresoGastosRubro)||'',(data&&data.ingresoGastosSubrubro)||'');
+      cqIngresoActualizarPreview();
+    }).catch(function(e){console.warn('Config Gastos para ingresos:',e);});
+  }else if(window._cqFirebase){
+    cqLoadGastosConfigFirebase(true).then(function(){
+      cqIngresoRenderObras(data);
+      cqIngresoObraGastosChanged((data&&data.ingresoGastosRubro)||'',(data&&data.ingresoGastosSubrubro)||'');
+    }).catch(function(e){console.warn('Actualización config Gastos para ingresos:',e);});
+  }
+}
+function cqIngresoReadIntegraciones(tipo,monto,fecha){
+  var out={
+    ingresoGastosAgregar:false,ingresoGastosObraId:'',ingresoGastosRubro:'',ingresoGastosSubrubro:'',ingresoGastosSyncEstado:'no',ingresoGastosSyncError:'No se agregó a Gastos',
+    ingresoFinAgregar:false,ingresoFinObraId:'',ingresoFinUnidad:'',ingresoFinTipo:'',ingresoFinMontoUsd:0,ingresoFinSyncEstado:'no',ingresoFinSyncError:'No se agregó al Resumen financiero'
+  };
+  var tg=document.getElementById('ing-gastos-toggle');
+  if(tg&&tg.checked){
+    if(!CQ_GASTOS_CONFIG_FIREBASE){
+      try{CQ_GASTOS_CONFIG_FIREBASE=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}
+    }
+    var obra=(document.getElementById('ing-gastos-obra')||{}).value||'';
+    var rub=(document.getElementById('ing-gastos-rubro')||{}).value||'';
+    var sub=(document.getElementById('ing-gastos-subrubro')||{}).value||'';
+    if(!obra)return {error:'Seleccioná la obra para enviar el ingreso a Gastos.'};
+    if(!rub)return {error:'Seleccioná la categoría del ingreso en Gastos.'};
+    if(!sub)return {error:'Seleccioná el subrubro del ingreso en Gastos.'};
+    out.ingresoGastosAgregar=true;out.ingresoGastosObraId=obra;out.ingresoGastosRubro=rub;out.ingresoGastosSubrubro=sub;out.ingresoGastosSyncEstado='pendiente';out.ingresoGastosSyncError='';
+  }
+  var tf=document.getElementById('ing-fin-toggle');
+  if(tf&&tf.checked){
+    var obraF=(document.getElementById('ing-fin-obra')||{}).value||'';
+    var unidad=(document.getElementById('ing-fin-unidad')||{}).value||'';
+    var tipoF=(document.getElementById('ing-fin-tipo')||{}).value||'';
+    if(!obraF)return {error:'Seleccioná la obra para el Resumen financiero.'};
+    if(!unidad)return {error:'Seleccioná la unidad (A o B) para el Resumen financiero.'};
+    if(!tipoF)return {error:'Elegí si el ingreso corresponde a Precio inicial, Cuota o Comisión.'};
+    var tc=cqIngresoTC();
+    if(cqIngresoMoneda(tipo)==='ars'&&!tc)return {error:'Para cargar un ingreso en pesos al Resumen financiero hace falta un tipo de cambio válido.'};
+    var usd=cqIngresoMontoUSD(tipo,monto,tc);
+    if(!(usd>0))return {error:'No se pudo calcular el monto en U$S para el Resumen financiero.'};
+    out.ingresoFinAgregar=true;out.ingresoFinObraId=obraF;out.ingresoFinUnidad=unidad;out.ingresoFinTipo=tipoF;out.ingresoFinMontoUsd=usd;out.ingresoFinSyncEstado='pendiente';out.ingresoFinSyncError='';out.ingresoFinFecha=fecha;
+  }
+  return out;
+}
+function cqIngresoGastosLinkId(movId){return 'caja_ingreso_'+String(movId);}
+function cqIngresoGastosPayload(mov,tipo){
+  var nowISO=new Date().toISOString();
+  var moneda=cqIngresoMoneda(tipo||mov.cajaTipo||'fondo-pesos');
+  return {
+    id:cqIngresoGastosLinkId(mov.id),createdAt:mov.creadoAt||nowISO,createdBy:mov.creadoPor||CURRENT_USER||'Caja',
+    fecha:mov.fecha,cat:mov.ingresoGastosRubro,subrubro:mov.ingresoGastosSubrubro,moneda:moneda,monto:-Math.abs(Number(mov.monto)||0),tc:Number(mov.tc)||cqIngresoTC()||0,
+    nota:String(mov.desc||'Ingreso desde Caja Gerencia'),tipoMovimiento:'ingreso',updatedAt:nowISO,updatedBy:CURRENT_USER||mov.updatedPor||mov.creadoPor||'Caja',
+    origen:'cq_caja_gerencia',cajaMovimientoId:String(mov.id),cajaGerenciaMovimientoId:String(mov.id),cajaCuenta:labelFondo(tipo||mov.cajaTipo||'fondo-pesos'),cajaObraId:mov.ingresoGastosObraId
+  };
+}
+async function cqSyncIngresoConGastos(mov,tipo,oldMov,oldTipo){
+  if(!mov)return;
+  var nueva=!!mov.ingresoGastosAgregar, vieja=!!(oldMov&&oldMov.ingresoGastosAgregar);
+  try{
+    if(vieja&&(!nueva||String(oldMov.ingresoGastosObraId)!==String(mov.ingresoGastosObraId))){
+      await cqUpsertGastoObra(oldMov.ingresoGastosObraId,cqIngresoGastosPayload(oldMov,oldTipo||oldMov.cajaTipo||tipo),true);
+    }
+    if(nueva){
+      await cqUpsertGastoObra(mov.ingresoGastosObraId,cqIngresoGastosPayload(mov,tipo),false);
+      mov.ingresoGastosSyncEstado='ok';mov.ingresoGastosSyncError='';
+    }else{
+      mov.ingresoGastosSyncEstado='no';mov.ingresoGastosSyncError='No se agregó a Gastos';
+    }
+  }catch(e){
+    mov.ingresoGastosSyncEstado='error';mov.ingresoGastosSyncError=String(e&&e.message||e);throw e;
+  }
+}
+function cqCajaFinHasUnits(fin){
+  return !!(fin&&fin.unidades&&['A','B'].some(function(k){var s=fin.unidades[k]||{};return Number(s.venta)>0||(Array.isArray(s.cuotasDetalle)&&s.cuotasDetalle.some(function(c){return Number(c&&c.monto!=null?c.monto:c)>0;}))||Object.prototype.hasOwnProperty.call(s,'comisionPct');}));
+}
+function cqCajaFinNormUnit(fin,k){
+  fin=fin||{};var src=(fin.unidades&&fin.unidades[k])||{};var u=Object.assign({},src);
+  u.venta=Math.max(0,Number(src.venta)||0);u.ventaMes=String(src.ventaMes||'');
+  u.cuotasDetalle=Array.isArray(src.cuotasDetalle)?src.cuotasDetalle.map(function(c){return c&&typeof c==='object'?Object.assign({},c,{monto:Math.max(0,Number(c.monto)||0),mes:String(c.mes||'')}):{monto:Math.max(0,Number(c)||0),mes:''};}).filter(function(c){return c.monto>0;}):[];
+  u.comisionPct=Number.isFinite(Number(src.comisionPct))?Math.max(0,Number(src.comisionPct)):2.5;u.etapa=String(src.etapa||'');u.fechaVenta=String(src.fechaVenta||'');
+  if(!cqCajaFinHasUnits(fin)&&k==='A'){
+    u.venta=Math.max(0,Number(fin.venta)||0);u.ventaMes=String(fin.ventaMes||'');
+    u.cuotasDetalle=Array.isArray(fin.cuotasDetalle)?fin.cuotasDetalle.map(function(c){return c&&typeof c==='object'?{monto:Math.max(0,Number(c.monto)||0),mes:String(c.mes||'')}:{monto:Math.max(0,Number(c)||0),mes:''};}).filter(function(c){return c.monto>0;}):[];
+    u.comisionPct=Number.isFinite(Number(fin.comisionPct))?Math.max(0,Number(fin.comisionPct)):2.5;
+  }
+  return u;
+}
+function cqCajaFinUnitTotal(u){return (Number(u&&u.venta)||0)+(Array.isArray(u&&u.cuotasDetalle)?u.cuotasDetalle.reduce(function(a,c){return a+(Number(c.monto)||0);},0):0);}
+function cqCajaFinRecalc(fin){
+  fin=fin||{};var A=cqCajaFinNormUnit(fin,'A'),B=cqCajaFinNormUnit(fin,'B');fin.unidades={A:A,B:B};
+  var venta=(Number(A.venta)||0)+(Number(B.venta)||0), flat=[], cuotas=0, comision=0, meses=[];
+  ['A','B'].forEach(function(k){var u=fin.unidades[k];if(u.ventaMes)meses.push(u.ventaMes);(u.cuotasDetalle||[]).forEach(function(c){cuotas+=Number(c.monto)||0;flat.push({monto:Number(c.monto)||0,mes:String(c.mes||''),unidad:k});if(c.mes)meses.push(c.mes);});var total=cqCajaFinUnitTotal(u);comision+=total*(Math.max(0,Number(u.comisionPct)||0)/100);});
+  fin.venta=venta;fin.ventaMes=meses.sort()[0]||'';fin.cuotasDetalle=flat;fin.cuotas=cuotas;fin.comisionModo='auto';fin.comisionManual=0;fin.comision=comision;fin.comisionPct=(venta+cuotas)>0?comision/(venta+cuotas)*100:0;return fin;
+}
+function cqIngresoFinEntry(mov,tipo){
+  if(!mov||!mov.ingresoFinAgregar)return null;
+  var amount=Number(mov.ingresoFinMontoUsd)||cqIngresoMontoUSD(tipo||mov.cajaTipo,Number(mov.monto)||0,Number(mov.tc)||cqIngresoTC());
+  return {integrationId:'caja_ingreso_fin_'+String(mov.id),sourceMovementId:String(mov.id),unit:String(mov.ingresoFinUnidad||''),type:String(mov.ingresoFinTipo||''),amountUsd:amount,date:String(mov.fecha||''),month:String(mov.fecha||'').slice(0,7),account:String(tipo||mov.cajaTipo||''),updatedAt:new Date().toISOString(),updatedBy:CURRENT_USER||mov.updatedPor||mov.creadoPor||'Caja'};
+}
+function cqCajaFinRemoveQuota(u,entry){
+  var arr=Array.isArray(u.cuotasDetalle)?u.cuotasDetalle.slice():[];var idx=arr.findIndex(function(c){return String(c&&c.cqCajaIntegrationId||'')===String(entry.integrationId);});
+  if(idx<0)idx=arr.findIndex(function(c){return String(c&&c.mes||'')===String(entry.month||'')&&Math.abs((Number(c&&c.monto)||0)-(Number(entry.amountUsd)||0))<0.005;});
+  if(idx>=0)arr.splice(idx,1);u.cuotasDetalle=arr;
+}
+function cqCajaFinApplyEntry(fin,entry,sign){
+  if(!entry||!entry.unit||!entry.type)return;
+  var k=entry.unit==='B'?'B':'A';var u=cqCajaFinNormUnit(fin,k);var amount=Math.max(0,Number(entry.amountUsd)||0);var month=String(entry.month||entry.date||'').slice(0,7);
+  if(entry.type==='precio'){
+    if(sign>0){
+      if(entry.previousVenta==null)entry.previousVenta=Number(u.venta)||0;
+      if(entry.previousVentaMes==null)entry.previousVentaMes=String(u.ventaMes||'');
+      if(entry.previousPrecioFechaCajaGerencia==null)entry.previousPrecioFechaCajaGerencia=String(u.precioFechaCajaGerencia||'');
+      u.venta=amount;u.ventaMes=month||u.ventaMes;u.precioFechaCajaGerencia=entry.date||'';
+    }else if(entry.previousVenta!=null){
+      u.venta=Math.max(0,Number(entry.previousVenta)||0);u.ventaMes=String(entry.previousVentaMes||'');u.precioFechaCajaGerencia=String(entry.previousPrecioFechaCajaGerencia||'');
+    }else{
+      u.venta=Math.max(0,(Number(u.venta)||0)-amount);if(u.venta<=0)u.ventaMes='';
+    }
+  }else if(entry.type==='cuota'){
+    if(sign>0){u.cuotasDetalle=Array.isArray(u.cuotasDetalle)?u.cuotasDetalle.slice():[];u.cuotasDetalle.push({monto:amount,mes:month,cqCajaIntegrationId:entry.integrationId,fechaCajaGerencia:entry.date||''});}
+    else cqCajaFinRemoveQuota(u,entry);
+  }else if(entry.type==='comision'){
+    var total=cqCajaFinUnitTotal(u);
+    if(sign>0){
+      if(!(total>0))throw new Error('Para cargar una comisión, la Unidad '+k+' debe tener Precio inicial o Cuotas cargadas.');
+      if(entry.previousComisionPct==null)entry.previousComisionPct=Math.max(0,Number(u.comisionPct)||0);
+      if(entry.previousComisionFechaCajaGerencia==null)entry.previousComisionFechaCajaGerencia=String(u.comisionFechaCajaGerencia||'');
+      u.comisionPct=amount/total*100;u.comisionFechaCajaGerencia=entry.date||'';
+    }else if(entry.previousComisionPct!=null){
+      u.comisionPct=Math.max(0,Number(entry.previousComisionPct)||0);u.comisionFechaCajaGerencia=String(entry.previousComisionFechaCajaGerencia||'');
+    }else{
+      var actual=total*(Math.max(0,Number(u.comisionPct)||0)/100),objetivo=Math.max(0,actual-amount);u.comisionPct=total>0?objetivo/total*100:0;
+    }
+  }
+  fin.unidades=fin.unidades||{};fin.unidades[k]=u;
+}
+async function cqActualizarFinancieroDesdeCaja(obraId,removeEntry,addEntry){
+  var f=window._cqFirebase;if(!f||!f.runTransaction)throw new Error('Firebase no está disponible');
+  var ref=f.doc(f.db,'gastos',obraId);
+  await f.runTransaction(f.db,async function(tx){
+    var snap=await tx.get(ref);var data=snap.exists()?(snap.data()||{}):{gastos:[],financiero:{}};var fin=data.financiero&&typeof data.financiero==='object'?JSON.parse(JSON.stringify(data.financiero)):{};
+    fin.unidades={A:cqCajaFinNormUnit(fin,'A'),B:cqCajaFinNormUnit(fin,'B')};var ints=Array.isArray(fin.cajaGerenciaIngresos)?fin.cajaGerenciaIngresos.slice():[];
+    if(removeEntry){var stored=ints.find(function(x){return String(x&&x.integrationId)===String(removeEntry.integrationId);});if(stored)cqCajaFinApplyEntry(fin,stored,-1);ints=ints.filter(function(x){return String(x&&x.integrationId)!==String(removeEntry.integrationId);});}
+    if(addEntry){addEntry=Object.assign({},addEntry);cqCajaFinApplyEntry(fin,addEntry,1);ints=ints.filter(function(x){return String(x&&x.integrationId)!==String(addEntry.integrationId);});ints.push(addEntry);}
+    ['A','B'].forEach(function(k){var prices=ints.filter(function(x){return x&&x.unit===k&&x.type==='precio'&&x.month;}).map(function(x){return x.month;}).sort();if(prices.length)fin.unidades[k].ventaMes=prices[0];});
+    fin.cajaGerenciaIngresos=ints;fin=cqCajaFinRecalc(fin);data.financiero=fin;data.updatedAt=new Date().toISOString();tx.set(ref,data);
+  });
+}
+async function cqSyncIngresoFinanciero(mov,tipo,oldMov,oldTipo){
+  var nueva=!!(mov&&mov.ingresoFinAgregar), vieja=!!(oldMov&&oldMov.ingresoFinAgregar);var newEntry=nueva?cqIngresoFinEntry(mov,tipo):null;var oldEntry=vieja?cqIngresoFinEntry(oldMov,oldTipo||oldMov.cajaTipo||tipo):null;
+  try{
+    if(vieja&&nueva&&String(oldMov.ingresoFinObraId)===String(mov.ingresoFinObraId)){
+      await cqActualizarFinancieroDesdeCaja(mov.ingresoFinObraId,oldEntry,newEntry);
+    }else{
+      if(nueva)await cqActualizarFinancieroDesdeCaja(mov.ingresoFinObraId,null,newEntry);
+      if(vieja)await cqActualizarFinancieroDesdeCaja(oldMov.ingresoFinObraId,oldEntry,null);
+    }
+    if(nueva){mov.ingresoFinSyncEstado='ok';mov.ingresoFinSyncError='';}else{mov.ingresoFinSyncEstado='no';mov.ingresoFinSyncError='No se agregó al Resumen financiero';}
+  }catch(e){mov.ingresoFinSyncEstado='error';mov.ingresoFinSyncError=String(e&&e.message||e);throw e;}
+}
+async function cqEliminarIngresoIntegraciones(mov,tipo){
+  try{
+    if(mov.ingresoGastosAgregar)await cqUpsertGastoObra(mov.ingresoGastosObraId,cqIngresoGastosPayload(mov,tipo),true);
+    if(mov.ingresoFinAgregar)await cqActualizarFinancieroDesdeCaja(mov.ingresoFinObraId,cqIngresoFinEntry(mov,tipo),null);
+    return true;
+  }catch(e){console.warn('No se pudieron quitar integraciones del ingreso',e);toast('No se pudieron quitar los vínculos del ingreso. Caja no se borró.');return false;}
+}
+function cqIngresoSyncDot(label,state,error){
+  var st=state||'error';var cls=st==='ok'?'ok':(st==='pendiente'?'wait':'');var title=st==='ok'?label+' sincronizado':(st==='pendiente'?'Sincronizando '+label+'…':(error||('Error de sincronización con '+label)));
+  return '<span class="cq-sync-labeled"><span class="cq-sync-mini-label">'+escapeHTML(label)+'</span><span class="cq-gastos-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span></span>';
+}
+function cqIngresoSyncHTML(mov){
+  if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
+}
+function cqIngresoDetalleIntegracion(mov){
+  if(!mov)return '';var partes=[];if(mov.ingresoGastosAgregar)partes.push('Gastos · '+(mov.ingresoGastosObraId||'')+' · '+(mov.ingresoGastosSubrubro||''));if(mov.ingresoFinAgregar)partes.push('Resumen · '+(mov.ingresoFinObraId||'')+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
 }
 
 var ingTipo=null, ingEditId=null;
@@ -4293,6 +4627,7 @@ function openIngreso(tipo){
   document.getElementById('ing-desc').value='';
   document.getElementById('ing-fecha').value=todayISO();
   fillDatalists();
+  cqIngresoInit(null);
   openModal('modal-ingreso');
 }
 function openEditIngreso(tipo,id){
@@ -4300,38 +4635,42 @@ function openEditIngreso(tipo,id){
   var cfg=fondoConfig(tipo);
   var m=(DB[cfg.movs]||[]).find(function(x){return x.id===id;});
   if(!m) return;
-  document.getElementById('ing-ttl').textContent='Editar ingreso';
+  document.getElementById('ing-ttl').textContent='Editar ingreso · '+cfg.titulo;
   document.getElementById('ing-monto-label').textContent='Monto '+cfg.label;
   document.getElementById('ing-monto').value=m.monto;
-  document.getElementById('ing-desc').value=m.desc;
+  document.getElementById('ing-desc').value=m.desc||'';
   document.getElementById('ing-fecha').value=m.fecha;
   fillDatalists();
+  cqIngresoInit(m);
   openModal('modal-ingreso');
 }
-function guardarIngreso(){
+async function guardarIngreso(){
   if(!asegurarUsuarioElegido()) return;
   var monto=parseFloat(document.getElementById('ing-monto').value);
   var desc=document.getElementById('ing-desc').value.trim();
   var fecha=document.getElementById('ing-fecha').value;
   if(!monto||monto<=0){alert('Ingresá un monto válido');return;}
-  
   if(!fecha){alert('Seleccioná una fecha');return;}
-  var cfg=fondoConfig(ingTipo);
-  var tc=getLastTC();
-  if(!DB[cfg.movs])DB[cfg.movs]=[];
+  var integraciones=cqIngresoReadIntegraciones(ingTipo,monto,fecha);
+  if(integraciones.error){alert(integraciones.error);return;}
+  var cfg=fondoConfig(ingTipo);var tc=cqIngresoTC();if(!DB[cfg.movs])DB[cfg.movs]=[];
+  var oldMov=null,movSync=null;
   if(ingEditId){
     var idx=DB[cfg.movs].findIndex(function(x){return x.id===ingEditId;});
-    if(idx>=0) DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:desc,fecha:fecha,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},(tc?{tc:tc}:{}));
-    toast('✓ Ingreso actualizado');
-    persist('Se modificó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
+    if(idx>=0){oldMov=JSON.parse(JSON.stringify(DB[cfg.movs][idx]));DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],integraciones,{monto:monto,desc:desc,fecha:fecha,cajaTipo:ingTipo,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},(tc?{tc:tc}:{}));movSync=DB[cfg.movs][idx];}
+    toast('✓ Ingreso actualizado');persist('Se modificó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   } else {
-    var nuevo={id:Date.now(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()};
-    if(tc) nuevo.tc=tc;
-    DB[cfg.movs].push(nuevo);
-    toast('✓ Ingreso registrado: '+cfg.fmt(monto));
-    persist('Se cargó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
+    var nuevo=Object.assign({id:Date.now(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha,cajaTipo:ingTipo,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},integraciones);if(tc)nuevo.tc=tc;DB[cfg.movs].push(nuevo);movSync=nuevo;
+    toast('✓ Ingreso registrado: '+cfg.fmt(monto));persist('Se cargó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   }
   closeModal('modal-ingreso');renderFondo(ingTipo);
+  var cajaOk=await cqConfirmarCajaAntesDeIntegrar();if(!cajaOk){toast('Ingreso guardado en Caja; vínculos externos pendientes');return;}
+  if(!movSync)return;
+  var huboError=false;
+  try{await cqSyncIngresoConGastos(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Gastos',e);toast('Ingreso guardado, pero no se pudo sincronizar con Gastos');}
+  try{await cqSyncIngresoFinanciero(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Resumen financiero',e);toast('Ingreso guardado, pero no se pudo sincronizar con Resumen financiero');}
+  persist();renderFondo(ingTipo);
+  if(!huboError&&(movSync.ingresoGastosAgregar||movSync.ingresoFinAgregar))toast('✓ Ingreso sincronizado');
 }
 async function borrarFondoMov(tipo,id){
   var cfg=fondoConfig(tipo);
@@ -4341,8 +4680,11 @@ async function borrarFondoMov(tipo,id){
   if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
 
-  // Primero limpiar vínculos externos. Si falla Gastos o Materiales, conservar Caja intacta.
-  if((tipo==='fondo-pesos'||tipo==='santander')){
+  // Primero limpiar vínculos externos. Si falla alguno, conservar Caja intacta.
+  if(mov.tipo==='ingreso'){
+    var okIng=await cqEliminarIngresoIntegraciones(mov,tipo);
+    if(!okIng)return;
+  }else if((tipo==='fondo-pesos'||tipo==='santander')){
     var okG=await cqEliminarVinculosGastos(mov);
     if(!okG)return;
     var okM=await cqEliminarVinculosMateriales(mov);
