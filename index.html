@@ -1,3 +1,4 @@
+<!-- CQ Caja Gerencia · build ingresos-gastos-resumen + caja chica autorrepara · 2026-10-11 -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -3870,6 +3871,14 @@ async function cqBestEffortCajaChicaState(payload){
     state.movements=Array.isArray(state.movements)?state.movements:[];
     state.works=Array.isArray(state.works)?state.works:[];
     state.concepts=Array.isArray(state.concepts)?state.concepts:[];
+    state.deletedMovementIds=Array.isArray(state.deletedMovementIds)?state.deletedMovementIds:[];
+    // Si este mismo vínculo había quedado marcado como borrado en Caja Chica,
+    // al volver a activarlo quitamos esa marca para que no vuelva a rojo después.
+    if(payload.active){
+      state.deletedMovementIds=state.deletedMovementIds.filter(function(id){
+        return String(id)!==String(payload.integrationId) && String(id)!==String(payload.sourceMovementId);
+      });
+    }
     state.exchangeRate=Number(state.exchangeRate)||Number(payload.tc)||1200;
     state.movements=state.movements.filter(function(x){
       return String(x.id)!==String(payload.integrationId)
@@ -3988,18 +3997,38 @@ async function cqVerificarIngresosCajaChica(){
     var ints=snapInt.exists()&&Array.isArray((snapInt.data()||{}).items)?snapInt.data().items:[];
 
     var cambio=false;
-    movs.forEach(function(m){
+    for(var i=0;i<movs.length;i++){
+      var m=movs[i];
       var iid=cqCajaChicaLinkIdCajaGerencia(m.id);
       var intg=ints.find(function(x){
         return x&&(String(x.integrationId||'')===iid || String(x.sourceMovementId||'')===String(m.id));
       });
       var payloadCheck={integrationId:iid,sourceMovementId:String(m.id)};
       var existe=ccMovs.some(function(x){return cqCajaChicaMovimientoCoincide(x,payloadCheck);});
-      var fueBorrado=deleted.indexOf(iid)>=0;
+      var fueBorrado=deleted.indexOf(iid)>=0 || deleted.indexOf(String(m.id))>=0;
       var activa=!!(intg&&intg.active!==false&&!intg.deletedFromCajaChica);
-      // El punto verde representa que el movimiento existe realmente en Caja Chica.
-      // La integración puede ser consumida/limpiada después de procesarse y no debe volverlo rojo.
-      var ok=existe&&!fueBorrado;
+
+      // Autorreparación: si la integración sigue activa pero Caja Chica todavía
+      // no refleja el movimiento (o conserva una marca de borrado antigua),
+      // volver a escribir el vínculo de forma transaccional. Así evitamos que
+      // quede eternamente titilando en "pendiente" cuando el alta es válida.
+      if(activa&&(!existe||fueBorrado)){
+        try{
+          var payloadReparacion=cqCajaChicaIntegrationPayload(m,true);
+          var reparado=await cqBestEffortCajaChicaState(payloadReparacion);
+          if(reparado){
+            existe=true;
+            fueBorrado=false;
+          }
+        }catch(eRepair){
+          console.warn('Autorreparación Caja Chica',eRepair);
+        }
+      }
+
+      // Verde significa que el movimiento existe realmente en Caja Chica.
+      // Una marca de borrado vieja no debe mantenerlo rojo si el movimiento
+      // ya fue recreado y está presente.
+      var ok=!!existe;
       var next=ok?'ok':(activa?'pendiente':'error');
       var err=ok?'':(activa?'Integración enviada; esperando confirmación de Caja Chica.':'El ingreso vinculado ya no existe en Caja Chica');
       if(m.cajaChicaSyncEstado!==next || String(m.cajaChicaSyncError||'')!==err){
@@ -4007,7 +4036,7 @@ async function cqVerificarIngresosCajaChica(){
         m.cajaChicaSyncError=err;
         cambio=true;
       }
-    });
+    }
     if(cambio){persist();try{renderFondo('fondo-pesos');}catch(_e){}}
   }catch(e){
     console.warn('Verificación Caja Gerencia ↔ Caja Chica',e);
