@@ -4647,6 +4647,11 @@ async function verifyUser(user){
     const mods=Array.isArray(cached.modulos)?cached.modulos:[];
     if(mods.includes("gerencia")){
       expose(cached);
+      // Ahora que Firebase Auth ya validó al usuario, reintentar la carga de Caja.
+      // La carga inicial puede haber ocurrido antes del login y haber quedado en "Sin conexión".
+      if(typeof window.loadFromFirebase==="function"){
+        setTimeout(()=>window.loadFromFirebase(),0);
+      }
       // Revalidación silenciosa: no demora la apertura.
       getDoc(doc(db,"cq_operaciones_usuarios",key)).then(snap=>{
         if(!snap.exists()){deny("El usuario ya no tiene una configuración de acceso válida.");return}
@@ -4679,6 +4684,11 @@ async function verifyUser(user){
     }
     saveCache(d,email);
     expose(d);
+    // Ahora que Firebase Auth ya validó al usuario, reintentar la carga de Caja.
+    // La carga inicial puede haber ocurrido antes del login y haber quedado en "Sin conexión".
+    if(typeof window.loadFromFirebase==="function"){
+      setTimeout(()=>window.loadFromFirebase(),0);
+    }
   }catch(e){
     console.warn("Caja Gerencia auth:",e);
     guard.classList.remove("cq-ok");
