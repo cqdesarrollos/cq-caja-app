@@ -4630,7 +4630,7 @@ function authErrorText(e){
   if(c.includes("invalid-credential")||c.includes("wrong-password")||c.includes("user-not-found")) return "Email o contraseña incorrectos.";
   if(c.includes("too-many-requests")) return "Demasiados intentos. Probá nuevamente más tarde.";
   if(c.includes("network-request-failed")) return "No se pudo conectar con Firebase.";
-  if(c.includes("unauthorized-domain")) return "Este dominio de Netlify todavía no está autorizado en Firebase Authentication.";
+  if(c.includes("unauthorized-domain")) return "Este dominio todavía no está autorizado en Firebase Authentication.";
   return "No se pudo iniciar sesión.";
 }
 
@@ -4691,7 +4691,9 @@ try{await setPersistence(auth,browserLocalPersistence)}catch(e){}
 onAuthStateChanged(auth,verifyUser);
 
 let cqLoginEnCurso=false;
-async function cqIntentarLoginAutomatico(){
+async function cqIntentarLogin(){
+  // IMPORTANTE: el login solo se ejecuta al enviar el formulario.
+  // No se dispara mientras el usuario escribe ni por autocompletado.
   if(cqLoginEnCurso)return;
   const email=String(emailInput.value||"").trim();
   const password=String(passInput.value||"");
@@ -4713,19 +4715,8 @@ async function cqIntentarLoginAutomatico(){
 
 form.addEventListener("submit",async ev=>{
   ev.preventDefault();
-  await cqIntentarLoginAutomatico();
+  await cqIntentarLogin();
 });
-
-// Si el navegador completa la contraseña guardada, entra sin tocar “Ingresar”.
-emailInput.addEventListener("change",()=>setTimeout(cqIntentarLoginAutomatico,80));
-passInput.addEventListener("input",()=>setTimeout(cqIntentarLoginAutomatico,120));
-passInput.addEventListener("change",()=>setTimeout(cqIntentarLoginAutomatico,80));
-let cqAutofillChecks=0;
-const cqAutofillTimer=setInterval(()=>{
-  cqAutofillChecks++;
-  if(emailInput.value && passInput.value) cqIntentarLoginAutomatico();
-  if(cqAutofillChecks>=20 || guard.classList.contains("cq-ok")) clearInterval(cqAutofillTimer);
-},250);
 
 window.cqCerrarSesion=async function(){
   clearCache();
