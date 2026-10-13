@@ -2705,8 +2705,14 @@ function cqImputacionObras(){
   var cfg=CQ_GASTOS_CONFIG_FIREBASE;
   if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
   if(!cfg||!Array.isArray(cfg.obras))return [];
+
+  // CQ 13/10/2026 — respetar la bandera "Solo Gastos".
+  // Oficina conserva su funcionamiento propio; una obra común con integrarModulos=false
+  // no puede seleccionarse para nuevas imputaciones/vínculos desde Caja Gerencia.
   return cfg.obras.filter(function(o){
-    return o&&o.id;
+    if(!o||!o.id)return false;
+    if(String(o.id)==='oficina')return true;
+    return o.integrarModulos!==false && o.archived!==true;
   }).map(function(o){
     var id=String(o.id);
     return {
@@ -2887,8 +2893,10 @@ function cqMaterialesPayloadCaja(mov,entry,active){
     sourceObraId:String(entry.obraId||''),
     comentario:String(mov.imputacionComentario||''),
     obraName:entry.obra,
+    materialId:(mov.materialesProducto&&mov.materialesProducto.id)!=null?mov.materialesProducto.id:null,
     materialCode:(mov.materialesProducto&&mov.materialesProducto.code)||'',
     materialName:(mov.materialesProducto&&mov.materialesProducto.name)||'Material',
+    materialCategory:(mov.materialesProducto&&mov.materialesProducto.category)||'',
     qty:Number(entry.qty)||0,
     unidad:'u',
     fecha:mov.fecha,
