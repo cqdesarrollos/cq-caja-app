@@ -1407,6 +1407,53 @@ body{overflow-x:hidden!important}
 }
 </style>
 
+
+<style id="cq-gf-mobile-natural-height-v3">
+/* CQ 13/10/2026 — comportamiento natural del modal en teléfono.
+   1 obra: entra completo sin scroll y sin espacio blanco sobrante.
+   Varias obras: el contenido crece y el modal completo hace scroll hasta Guardar. */
+@media (max-width:599px){
+  #modal-gasto-fondo{
+    padding:4px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:auto!important;
+    max-height:calc(100dvh - 8px)!important;
+    margin:auto!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    display:block!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+  }
+  #modal-gasto-fondo .modal-hd{
+    position:sticky!important;
+    top:0!important;
+    z-index:30!important;
+    background:#fff!important;
+  }
+  #modal-gasto-fondo .mbody{
+    display:block!important;
+    min-height:0!important;
+    overflow:visible!important;
+    flex:none!important;
+  }
+  /* El pie vuelve al flujo normal: si hay reparto múltiple se llega a él haciendo scroll. */
+  #modal-gasto-fondo .mfooter{
+    position:static!important;
+    z-index:auto!important;
+    flex:none!important;
+    box-shadow:none!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+  }
+}
+</style>
 </head>
 <body>
 
