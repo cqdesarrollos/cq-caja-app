@@ -1454,6 +1454,99 @@ body{overflow-x:hidden!important}
   }
 }
 </style>
+
+<style id="cq-gf-mobile-vertical-air-v4">
+/* CQ 13/10/2026 — más aire vertical en teléfono sin perder el modo natural.
+   Una obra sigue entrando completa; múltiples obras conservan scroll del modal. */
+@media (max-width:599px){
+  #modal-gasto-fondo .modal-hd{
+    padding:9px 13px 8px!important;
+    min-height:40px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{font-size:13.6px!important}
+
+  #modal-gasto-fondo .mbody{
+    padding:8px 10px 6px!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:5px!important}
+  #modal-gasto-fondo .fld label{
+    margin-bottom:3px!important;
+    font-size:8px!important;
+  }
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    min-height:33px!important;
+    height:33px!important;
+    padding:6px 8px!important;
+    font-size:11.2px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:33px!important}
+
+  #modal-gasto-fondo .imputacion-box{
+    margin-top:6px!important;
+    padding:7px!important;
+  }
+  #modal-gasto-fondo .imputacion-title{
+    margin-bottom:5px!important;
+    font-size:9.3px!important;
+  }
+  #modal-gasto-fondo .cq-add-gastos-row{
+    min-height:40px!important;
+    padding:6px 8px!important;
+    margin-bottom:5px!important;
+  }
+
+  #modal-gasto-fondo #gf-obras.obra-multi{
+    gap:5px!important;
+    margin-top:4px!important;
+  }
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{
+    min-height:31px!important;
+    height:31px!important;
+    padding:3px 4px!important;
+    font-size:8.35px!important;
+    line-height:1.05!important;
+  }
+
+  #modal-gasto-fondo #gf-comentario{
+    min-height:35px!important;
+    height:35px!important;
+    padding-top:7px!important;
+    padding-bottom:7px!important;
+  }
+
+  #modal-gasto-fondo #gf-reparto-total{
+    margin-top:4px!important;
+  }
+  #modal-gasto-fondo .mfooter{
+    padding:6px 10px 8px!important;
+    min-height:40px!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{
+    min-height:30px!important;
+    padding:6px 12px!important;
+    font-size:9.4px!important;
+  }
+}
+
+/* En teléfonos muy bajos se conserva la compactación anterior para evitar scroll con una obra. */
+@media (max-width:599px) and (max-height:700px){
+  #modal-gasto-fondo .modal-hd{min-height:34px!important;padding:6px 11px!important}
+  #modal-gasto-fondo .mbody{padding:5px 9px 3px!important}
+  #modal-gasto-fondo .fld{margin-bottom:3px!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{min-height:28px!important;height:28px!important;padding:4px 6px!important}
+  #modal-gasto-fondo input[type="date"]{height:28px!important}
+  #modal-gasto-fondo #gf-obras.obra-multi{gap:4px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{min-height:25px!important;height:25px!important;font-size:7.7px!important}
+  #modal-gasto-fondo #gf-comentario{min-height:28px!important;height:28px!important}
+  #modal-gasto-fondo .mfooter{min-height:35px!important;padding:4px 9px 5px!important}
+}
+</style>
 </head>
 <body>
 
