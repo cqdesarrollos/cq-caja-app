@@ -1677,6 +1677,209 @@ body{overflow-x:hidden!important}
   #modal-gasto-fondo .mfooter{min-height:44px!important;padding:6px 11px 7px!important}
 }
 </style>
+
+<style id="cq-gd-pesos-match-fondo-final">
+/* CQ 13/10/2026 — Deuda $ usa la misma escala móvil aprobada en Fondo común $.
+   Sólo presentación; Deuda u$s queda intacta. */
+@media (max-width:599px){
+  #modal-gasto-deuda.gd-pesos-layout{
+    padding:3px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:auto!important;
+    max-height:calc(100dvh - 6px)!important;
+    margin:auto!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    display:block!important;
+    border-radius:14px!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-hd{
+    position:sticky!important;
+    top:0!important;
+    z-index:30!important;
+    background:#fff!important;
+    min-height:44px!important;
+    padding:9px 14px 8px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-ttl{
+    font-size:14.4px!important;
+    line-height:1.1!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-x{font-size:17px!important;padding:0 3px!important}
+  #modal-gasto-deuda.gd-pesos-layout .mbody{
+    display:block!important;
+    flex:none!important;
+    min-height:0!important;
+    overflow:visible!important;
+    padding:8px 11px 6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .fld{margin-bottom:6px!important}
+  #modal-gasto-deuda.gd-pesos-layout .fld label{
+    margin-bottom:3px!important;
+    font-size:8.4px!important;
+    line-height:1.05!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .fld input,
+  #modal-gasto-deuda.gd-pesos-layout .fld select,
+  #modal-gasto-deuda.gd-pesos-layout .fld textarea,
+  #modal-gasto-deuda.gd-pesos-layout .cq-sub-search{
+    min-height:36px!important;
+    height:36px!important;
+    padding:6px 9px!important;
+    font-size:11.8px!important;
+    border-radius:8px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout input[type="date"]{height:36px!important}
+
+  /* Quién pagó: misma estética, pero compacto para que Deuda $ también entre con una obra. */
+  #modal-gasto-deuda.gd-pesos-layout #gd-payer-chips{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:6px!important;
+    margin:0!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-payer-chips .payer-chip{
+    min-height:34px!important;
+    height:34px!important;
+    padding:4px 8px!important;
+    font-size:10.6px!important;
+    border-radius:8px!important;
+    border-width:1.5px!important;
+  }
+
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-box{
+    margin-top:7px!important;
+    padding:8px!important;
+    border-radius:11px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-title{
+    margin-bottom:6px!important;
+    font-size:9.7px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-title small{font-size:7.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-row{
+    min-height:42px!important;
+    padding:6px 9px!important;
+    margin-bottom:6px!important;
+    border-radius:9px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-copy b{font-size:9.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-copy small{font-size:7.4px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch{width:39px!important;height:22px!important;flex-basis:39px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch-slider::after{width:16px!important;height:16px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch input:checked + .cq-switch-slider::after{transform:translateX(17px)!important}
+
+  #modal-gasto-deuda.gd-pesos-layout #gd-obras.obra-multi{
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:5px!important;
+    margin-top:4px!important;
+    align-items:stretch!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-obras .obra-multi-btn{
+    width:100%!important;
+    min-width:0!important;
+    min-height:34px!important;
+    height:34px!important;
+    padding:4px 5px!important;
+    font-size:8.7px!important;
+    line-height:1.08!important;
+    border-radius:8px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    text-align:center!important;
+    white-space:normal!important;
+    overflow:hidden!important;
+    overflow-wrap:anywhere!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-sub-btn{width:32px!important;height:32px!important;right:2px!important}
+  #modal-gasto-deuda.gd-pesos-layout #gd-comentario{
+    min-height:38px!important;
+    height:38px!important;
+    resize:none!important;
+    padding-top:6px!important;
+    padding-bottom:6px!important;
+    line-height:1.08!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action{
+    margin-top:3px!important;
+    padding:4px 6px!important;
+    min-height:32px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action b{font-size:8px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action small,
+  #modal-gasto-deuda.gd-pesos-layout #gd-materiales-resumen{font-size:6.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action button{padding:5px 7px!important;font-size:7.5px!important}
+
+  /* Varias obras: mismo reparto compacto; el modal hace scroll natural hasta Guardar. */
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto.reparto-wrap{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:3px!important;
+    margin-top:3px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .imputacion-resumen{
+    grid-column:1/-1!important;
+    margin:0!important;
+    padding:3px 5px!important;
+    font-size:7px!important;
+    line-height:1.05!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row{
+    grid-template-columns:minmax(0,1fr) 58px!important;
+    gap:3px!important;
+    min-height:26px!important;
+    padding:2px 3px!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row span{
+    font-size:7.2px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row input{
+    min-height:22px!important;
+    height:22px!important;
+    padding:2px 3px!important;
+    font-size:7.5px!important;
+    border-radius:5px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto-total{
+    margin-top:4px!important;
+    font-size:7.6px!important;
+    line-height:1.05!important;
+  }
+
+  #modal-gasto-deuda.gd-pesos-layout .mfooter{
+    position:static!important;
+    z-index:auto!important;
+    flex:none!important;
+    min-height:44px!important;
+    padding:6px 11px 7px!important;
+    gap:7px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:none!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .mfooter .btn{
+    min-height:34px!important;
+    padding:7px 13px!important;
+    font-size:10px!important;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -4159,6 +4362,8 @@ function cqActualizarIngresosCambio(sourceMov,fx,fecha,origenLabel,purpose){
 }
 function openGastoDeuda(moneda){
   gdMoneda=moneda; gdEditId=null;
+  var gdModal=document.getElementById('modal-gasto-deuda');
+  if(gdModal)gdModal.classList.toggle('gd-pesos-layout',moneda==='pesos');
   document.getElementById('gd-ttl').textContent='Nuevo gasto';
   document.getElementById('gd-monto-label').textContent='Monto '+(moneda==='pesos'?'$':'u$s');
   document.getElementById('gd-monto').value='';
@@ -4178,6 +4383,8 @@ function selectPayer(btn){
 }
 function openEditDeuda(moneda,id){
   gdMoneda=moneda; gdEditId=id;
+  var gdModal=document.getElementById('modal-gasto-deuda');
+  if(gdModal)gdModal.classList.toggle('gd-pesos-layout',moneda==='pesos');
   var g=deudaList(moneda).find(function(x){return x.id===id;});
   if(!g) return;
   document.getElementById('gd-ttl').textContent='Editar gasto';
