@@ -1,4 +1,4 @@
-<!-- CQ Caja Gerencia · build caja-chica-v2 histórica + ingresos gastos resumen · 2026-10-11 -->
+<!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1133,6 +1133,753 @@ body{overflow-x:hidden!important}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style id="cq-fix-tipografia-detalle-ingreso-v1">
+/* Unifica el detalle de integraciones de ingresos con el resto de metadatos de Caja */
+.cq-imputacion-detail{
+  font-family:'Space Grotesk',sans-serif!important;
+  font-size:9.5px!important;
+  color:#668073!important;
+  margin-top:3px!important;
+  line-height:1.35!important;
+  font-weight:700!important;
+  white-space:normal!important;
+  letter-spacing:normal!important;
+}
+</style>
+
+<style id="cq-obras-imputacion-grid-responsive">
+/* Orden visual de obras en imputación — tablet/teléfono. Solo presentación. */
+#gd-obras.obra-multi,#gf-obras.obra-multi{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:7px!important;
+  align-items:stretch!important;
+  margin-top:7px!important;
+}
+#gd-obras .obra-multi-btn,#gf-obras .obra-multi-btn{
+  width:100%!important;
+  min-width:0!important;
+  min-height:40px!important;
+  height:auto!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  line-height:1.15!important;
+  padding:8px 9px!important;
+  border-radius:11px!important;
+  font-size:10.5px!important;
+}
+@media (min-width:600px){
+  #modal-gasto-deuda .modal,#modal-gasto-fondo .modal{
+    max-width:620px!important;
+    width:min(94vw,620px)!important;
+  }
+  #gd-obras.obra-multi,#gf-obras.obra-multi{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:8px!important;
+  }
+  #gd-obras .obra-multi-btn,#gf-obras .obra-multi-btn{
+    min-height:43px!important;
+    padding:9px 10px!important;
+    font-size:11px!important;
+  }
+}
+@media (max-width:599px){
+  #modal-gasto-deuda .modal,#modal-gasto-fondo .modal{
+    width:min(96vw,420px)!important;
+  }
+  #gd-obras.obra-multi,#gf-obras.obra-multi{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:6px!important;
+  }
+  #gd-obras .obra-multi-btn,#gf-obras .obra-multi-btn{
+    min-height:38px!important;
+    padding:7px 5px!important;
+    font-size:9.4px!important;
+    line-height:1.08!important;
+    border-radius:10px!important;
+  }
+}
+@media (max-width:360px){
+  #gd-obras .obra-multi-btn,#gf-obras .obra-multi-btn{font-size:8.7px!important;padding:6px 4px!important;}
+}
+</style>
+
+
+<style id="cq-gf-mobile-3cols-fit-footer-v2">
+/* Caja Gerencia · teléfono: 3 obras por fila + modal compacto.
+   El pie queda siempre visible aunque se seleccionen varias obras. */
+@media (max-width:599px){
+  #modal-gasto-fondo{
+    padding:4px!important;
+    align-items:flex-start!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:calc(100dvh - 8px)!important;
+    max-height:calc(100dvh - 8px)!important;
+    margin:0 auto!important;
+    border-radius:13px!important;
+    overflow:hidden!important;
+    display:flex!important;
+    flex-direction:column!important;
+  }
+  #modal-gasto-fondo .modal-hd{
+    flex:0 0 auto!important;
+    padding:7px 12px 6px!important;
+    min-height:36px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{font-size:13px!important;line-height:1.05!important}
+  #modal-gasto-fondo .modal-x{font-size:17px!important;padding:0 3px!important}
+
+  #modal-gasto-fondo .mbody{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    padding:6px 10px 3px!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:4px!important}
+  #modal-gasto-fondo .fld label{
+    font-size:7.7px!important;
+    margin-bottom:2px!important;
+    line-height:1!important;
+  }
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    padding:5px 7px!important;
+    min-height:30px!important;
+    height:30px!important;
+    font-size:10.8px!important;
+    border-radius:7px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:30px!important}
+
+  #modal-gasto-fondo .imputacion-box{
+    margin-top:5px!important;
+    padding:6px!important;
+    border-radius:10px!important;
+  }
+  #modal-gasto-fondo .imputacion-title{
+    margin-bottom:4px!important;
+    font-size:9px!important;
+    line-height:1!important;
+  }
+  #modal-gasto-fondo .imputacion-title small{font-size:7px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{
+    padding:5px 7px!important;
+    margin-bottom:4px!important;
+    min-height:37px!important;
+    border-radius:8px!important;
+  }
+  #modal-gasto-fondo .cq-add-gastos-copy b{font-size:9px!important;line-height:1!important}
+  #modal-gasto-fondo .cq-add-gastos-copy small{font-size:7px!important;margin-top:1px!important;line-height:1.05!important}
+  #modal-gasto-fondo .cq-switch{width:39px!important;height:22px!important;flex-basis:39px!important}
+  #modal-gasto-fondo .cq-switch-slider::after{width:16px!important;height:16px!important}
+  #modal-gasto-fondo .cq-switch input:checked + .cq-switch-slider::after{transform:translateX(17px)!important}
+
+  #modal-gasto-fondo .cq-caja-chica-row.show{
+    margin-top:4px!important;
+    padding:5px 7px!important;
+    min-height:34px!important;
+    border-radius:8px!important;
+  }
+  #modal-gasto-fondo .cq-caja-chica-row b{font-size:8.5px!important}
+  #modal-gasto-fondo .cq-caja-chica-row small{font-size:6.8px!important;margin-top:1px!important;line-height:1.05!important}
+  #modal-gasto-fondo .cq-caja-chica-check{width:17px!important;height:17px!important}
+
+  /* 3 obras por fila */
+  #modal-gasto-fondo #gf-obras.obra-multi{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:4px!important;
+    margin-top:3px!important;
+  }
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{
+    min-height:27px!important;
+    height:27px!important;
+    padding:2px 3px!important;
+    font-size:8.15px!important;
+    line-height:1.02!important;
+    border-radius:7px!important;
+    overflow:hidden!important;
+    overflow-wrap:anywhere!important;
+  }
+
+  #modal-gasto-fondo .cq-sub-btn{width:27px!important;height:27px!important;right:2px!important}
+  #modal-gasto-fondo .imputacion-comment .fld{margin-bottom:2px!important}
+  #modal-gasto-fondo #gf-comentario{
+    min-height:31px!important;
+    height:31px!important;
+    resize:none!important;
+    line-height:1.08!important;
+  }
+  #modal-gasto-fondo .cq-materiales-action{
+    margin-top:3px!important;
+    padding:4px 6px!important;
+    min-height:32px!important;
+  }
+  #modal-gasto-fondo .cq-materiales-action b{font-size:8px!important}
+  #modal-gasto-fondo .cq-materiales-action small,#modal-gasto-fondo #gf-materiales-resumen{font-size:6.5px!important}
+  #modal-gasto-fondo .cq-materiales-action button{padding:5px 7px!important;font-size:7.5px!important}
+
+  /* Si hay varias obras, el reparto ocupa mucho menos alto: 2 tarjetas por fila. */
+  #modal-gasto-fondo #gf-reparto.reparto-wrap{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:3px!important;
+    margin-top:3px!important;
+  }
+  #modal-gasto-fondo #gf-reparto .imputacion-resumen{
+    grid-column:1/-1!important;
+    margin:0!important;
+    padding:3px 5px!important;
+    font-size:7px!important;
+    line-height:1.05!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-fondo #gf-reparto .reparto-row{
+    grid-template-columns:minmax(0,1fr) 58px!important;
+    gap:3px!important;
+    min-height:26px!important;
+    padding:2px 3px!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-fondo #gf-reparto .reparto-row span{
+    font-size:7.2px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  #modal-gasto-fondo #gf-reparto .reparto-row input{
+    min-height:22px!important;
+    height:22px!important;
+    padding:2px 3px!important;
+    font-size:7.5px!important;
+    border-radius:5px!important;
+  }
+  #modal-gasto-fondo #gf-reparto-total{
+    margin-top:2px!important;
+    font-size:7px!important;
+    line-height:1.05!important;
+  }
+
+  /* Guardar siempre visible: el cuerpo puede crecer, el pie no se mueve. */
+  #modal-gasto-fondo .mfooter{
+    flex:0 0 auto!important;
+    position:relative!important;
+    z-index:20!important;
+    padding:4px 10px 6px!important;
+    min-height:35px!important;
+    gap:5px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:0 -5px 12px rgba(28,61,53,.05)!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{
+    padding:5px 10px!important;
+    min-height:27px!important;
+    font-size:9px!important;
+  }
+}
+
+/* Teléfonos especialmente bajos: última reducción visual, sin cambiar funciones. */
+@media (max-width:599px) and (max-height:700px){
+  #modal-gasto-fondo .modal-hd{min-height:33px!important;padding-top:5px!important;padding-bottom:5px!important}
+  #modal-gasto-fondo .mbody{padding-top:4px!important}
+  #modal-gasto-fondo .fld{margin-bottom:3px!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{min-height:27px!important;height:27px!important;padding-top:4px!important;padding-bottom:4px!important}
+  #modal-gasto-fondo input[type="date"]{height:27px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{min-height:34px!important;padding-top:4px!important;padding-bottom:4px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{min-height:24px!important;height:24px!important;font-size:7.6px!important}
+  #modal-gasto-fondo #gf-comentario{min-height:27px!important;height:27px!important}
+  #modal-gasto-fondo #gf-reparto .reparto-row{min-height:24px!important}
+}
+</style>
+
+
+<style id="cq-gf-mobile-natural-height-v3">
+/* CQ 13/10/2026 — comportamiento natural del modal en teléfono.
+   1 obra: entra completo sin scroll y sin espacio blanco sobrante.
+   Varias obras: el contenido crece y el modal completo hace scroll hasta Guardar. */
+@media (max-width:599px){
+  #modal-gasto-fondo{
+    padding:4px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:auto!important;
+    max-height:calc(100dvh - 8px)!important;
+    margin:auto!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    display:block!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+  }
+  #modal-gasto-fondo .modal-hd{
+    position:sticky!important;
+    top:0!important;
+    z-index:30!important;
+    background:#fff!important;
+  }
+  #modal-gasto-fondo .mbody{
+    display:block!important;
+    min-height:0!important;
+    overflow:visible!important;
+    flex:none!important;
+  }
+  /* El pie vuelve al flujo normal: si hay reparto múltiple se llega a él haciendo scroll. */
+  #modal-gasto-fondo .mfooter{
+    position:static!important;
+    z-index:auto!important;
+    flex:none!important;
+    box-shadow:none!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+  }
+}
+</style>
+
+<style id="cq-gf-mobile-vertical-air-v4">
+/* CQ 13/10/2026 — más aire vertical en teléfono sin perder el modo natural.
+   Una obra sigue entrando completa; múltiples obras conservan scroll del modal. */
+@media (max-width:599px){
+  #modal-gasto-fondo .modal-hd{
+    padding:9px 13px 8px!important;
+    min-height:40px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{font-size:13.6px!important}
+
+  #modal-gasto-fondo .mbody{
+    padding:8px 10px 6px!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:5px!important}
+  #modal-gasto-fondo .fld label{
+    margin-bottom:3px!important;
+    font-size:8px!important;
+  }
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    min-height:33px!important;
+    height:33px!important;
+    padding:6px 8px!important;
+    font-size:11.2px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:33px!important}
+
+  #modal-gasto-fondo .imputacion-box{
+    margin-top:6px!important;
+    padding:7px!important;
+  }
+  #modal-gasto-fondo .imputacion-title{
+    margin-bottom:5px!important;
+    font-size:9.3px!important;
+  }
+  #modal-gasto-fondo .cq-add-gastos-row{
+    min-height:40px!important;
+    padding:6px 8px!important;
+    margin-bottom:5px!important;
+  }
+
+  #modal-gasto-fondo #gf-obras.obra-multi{
+    gap:5px!important;
+    margin-top:4px!important;
+  }
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{
+    min-height:31px!important;
+    height:31px!important;
+    padding:3px 4px!important;
+    font-size:8.35px!important;
+    line-height:1.05!important;
+  }
+
+  #modal-gasto-fondo #gf-comentario{
+    min-height:35px!important;
+    height:35px!important;
+    padding-top:7px!important;
+    padding-bottom:7px!important;
+  }
+
+  #modal-gasto-fondo #gf-reparto-total{
+    margin-top:4px!important;
+  }
+  #modal-gasto-fondo .mfooter{
+    padding:6px 10px 8px!important;
+    min-height:40px!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{
+    min-height:30px!important;
+    padding:6px 12px!important;
+    font-size:9.4px!important;
+  }
+}
+
+/* En teléfonos muy bajos se conserva la compactación anterior para evitar scroll con una obra. */
+@media (max-width:599px) and (max-height:700px){
+  #modal-gasto-fondo .modal-hd{min-height:34px!important;padding:6px 11px!important}
+  #modal-gasto-fondo .mbody{padding:5px 9px 3px!important}
+  #modal-gasto-fondo .fld{margin-bottom:3px!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{min-height:28px!important;height:28px!important;padding:4px 6px!important}
+  #modal-gasto-fondo input[type="date"]{height:28px!important}
+  #modal-gasto-fondo #gf-obras.obra-multi{gap:4px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{min-height:25px!important;height:25px!important;font-size:7.7px!important}
+  #modal-gasto-fondo #gf-comentario{min-height:28px!important;height:28px!important}
+  #modal-gasto-fondo .mfooter{min-height:35px!important;padding:4px 9px 5px!important}
+}
+</style>
+
+
+<style id="cq-gf-mobile-vertical-air-v5-final">
+/* Ajuste final móvil: sobreescribe también la compactación de pantallas bajas.
+   1 obra: aprovecha más la altura sin scroll. Varias: scroll natural del modal. */
+@media (max-width:599px){
+  #modal-gasto-fondo{
+    padding:3px!important;
+    align-items:center!important;
+  }
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:auto!important;
+    max-height:calc(100dvh - 6px)!important;
+    overflow-y:auto!important;
+    border-radius:14px!important;
+  }
+  #modal-gasto-fondo .modal-hd{
+    min-height:46px!important;
+    padding:11px 14px 10px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{
+    font-size:14.4px!important;
+    line-height:1.1!important;
+  }
+  #modal-gasto-fondo .mbody{
+    padding:10px 11px 8px!important;
+    overflow:visible!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:7px!important}
+  #modal-gasto-fondo .fld label{
+    margin-bottom:4px!important;
+    font-size:8.4px!important;
+    line-height:1.05!important;
+  }
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    min-height:38px!important;
+    height:38px!important;
+    padding:7px 9px!important;
+    font-size:11.8px!important;
+    border-radius:8px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:38px!important}
+
+  #modal-gasto-fondo .imputacion-box{
+    margin-top:8px!important;
+    padding:9px!important;
+    border-radius:11px!important;
+  }
+  #modal-gasto-fondo .imputacion-title{
+    margin-bottom:6px!important;
+    font-size:9.7px!important;
+  }
+  #modal-gasto-fondo .imputacion-title small{font-size:7.5px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{
+    min-height:44px!important;
+    padding:7px 9px!important;
+    margin-bottom:7px!important;
+    border-radius:9px!important;
+  }
+  #modal-gasto-fondo .cq-add-gastos-copy b{font-size:9.5px!important}
+  #modal-gasto-fondo .cq-add-gastos-copy small{font-size:7.4px!important}
+
+  #modal-gasto-fondo #gf-obras.obra-multi{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:6px!important;
+    margin-top:5px!important;
+  }
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{
+    min-height:36px!important;
+    height:36px!important;
+    padding:4px 5px!important;
+    font-size:8.7px!important;
+    line-height:1.08!important;
+    border-radius:8px!important;
+  }
+
+  #modal-gasto-fondo #gf-comentario{
+    min-height:42px!important;
+    height:42px!important;
+    padding-top:8px!important;
+    padding-bottom:8px!important;
+  }
+  #modal-gasto-fondo #gf-reparto-total{
+    margin-top:5px!important;
+    font-size:7.6px!important;
+  }
+
+  #modal-gasto-fondo .mfooter{
+    position:static!important;
+    flex:none!important;
+    min-height:48px!important;
+    padding:8px 11px 10px!important;
+    gap:7px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:none!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{
+    min-height:34px!important;
+    padding:7px 13px!important;
+    font-size:10px!important;
+  }
+}
+</style>
+
+<style id="cq-gf-mobile-fit-last-pixels-v6">
+/* Ajuste mínimo final móvil: sólo recupera unos píxeles para que el pie entre completo. */
+@media (max-width:599px){
+  #modal-gasto-fondo .modal-hd{min-height:44px!important;padding:9px 14px 8px!important}
+  #modal-gasto-fondo .mbody{padding:8px 11px 6px!important}
+  #modal-gasto-fondo .fld{margin-bottom:6px!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{min-height:36px!important;height:36px!important;padding:6px 9px!important}
+  #modal-gasto-fondo input[type="date"]{height:36px!important}
+  #modal-gasto-fondo .imputacion-box{margin-top:7px!important;padding:8px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{min-height:42px!important;padding:6px 9px!important;margin-bottom:6px!important}
+  #modal-gasto-fondo #gf-obras.obra-multi{gap:5px!important;margin-top:4px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{min-height:34px!important;height:34px!important}
+  #modal-gasto-fondo #gf-comentario{min-height:38px!important;height:38px!important;padding-top:6px!important;padding-bottom:6px!important}
+  #modal-gasto-fondo #gf-reparto-total{margin-top:4px!important}
+  #modal-gasto-fondo .mfooter{min-height:44px!important;padding:6px 11px 7px!important}
+}
+</style>
+
+<style id="cq-gd-pesos-match-fondo-final">
+/* CQ 13/10/2026 — Deuda $ usa la misma escala móvil aprobada en Fondo común $.
+   Sólo presentación; Deuda u$s queda intacta. */
+@media (max-width:599px){
+  #modal-gasto-deuda.gd-pesos-layout{
+    padding:3px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:auto!important;
+    max-height:calc(100dvh - 6px)!important;
+    margin:auto!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    display:block!important;
+    border-radius:14px!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-hd{
+    position:sticky!important;
+    top:0!important;
+    z-index:30!important;
+    background:#fff!important;
+    min-height:44px!important;
+    padding:9px 14px 8px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-ttl{
+    font-size:14.4px!important;
+    line-height:1.1!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .modal-x{font-size:17px!important;padding:0 3px!important}
+  #modal-gasto-deuda.gd-pesos-layout .mbody{
+    display:block!important;
+    flex:none!important;
+    min-height:0!important;
+    overflow:visible!important;
+    padding:8px 11px 6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .fld{margin-bottom:6px!important}
+  #modal-gasto-deuda.gd-pesos-layout .fld label{
+    margin-bottom:3px!important;
+    font-size:8.4px!important;
+    line-height:1.05!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .fld input,
+  #modal-gasto-deuda.gd-pesos-layout .fld select,
+  #modal-gasto-deuda.gd-pesos-layout .fld textarea,
+  #modal-gasto-deuda.gd-pesos-layout .cq-sub-search{
+    min-height:36px!important;
+    height:36px!important;
+    padding:6px 9px!important;
+    font-size:11.8px!important;
+    border-radius:8px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout input[type="date"]{height:36px!important}
+
+  /* Quién pagó: misma estética, pero compacto para que Deuda $ también entre con una obra. */
+  #modal-gasto-deuda.gd-pesos-layout #gd-payer-chips{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:6px!important;
+    margin:0!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-payer-chips .payer-chip{
+    min-height:34px!important;
+    height:34px!important;
+    padding:4px 8px!important;
+    font-size:10.6px!important;
+    border-radius:8px!important;
+    border-width:1.5px!important;
+  }
+
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-box{
+    margin-top:7px!important;
+    padding:8px!important;
+    border-radius:11px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-title{
+    margin-bottom:6px!important;
+    font-size:9.7px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .imputacion-title small{font-size:7.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-row{
+    min-height:42px!important;
+    padding:6px 9px!important;
+    margin-bottom:6px!important;
+    border-radius:9px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-copy b{font-size:9.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-add-gastos-copy small{font-size:7.4px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch{width:39px!important;height:22px!important;flex-basis:39px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch-slider::after{width:16px!important;height:16px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-switch input:checked + .cq-switch-slider::after{transform:translateX(17px)!important}
+
+  #modal-gasto-deuda.gd-pesos-layout #gd-obras.obra-multi{
+    display:grid!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:5px!important;
+    margin-top:4px!important;
+    align-items:stretch!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-obras .obra-multi-btn{
+    width:100%!important;
+    min-width:0!important;
+    min-height:34px!important;
+    height:34px!important;
+    padding:4px 5px!important;
+    font-size:8.7px!important;
+    line-height:1.08!important;
+    border-radius:8px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    text-align:center!important;
+    white-space:normal!important;
+    overflow:hidden!important;
+    overflow-wrap:anywhere!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-sub-btn{width:32px!important;height:32px!important;right:2px!important}
+  #modal-gasto-deuda.gd-pesos-layout #gd-comentario{
+    min-height:38px!important;
+    height:38px!important;
+    resize:none!important;
+    padding-top:6px!important;
+    padding-bottom:6px!important;
+    line-height:1.08!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action{
+    margin-top:3px!important;
+    padding:4px 6px!important;
+    min-height:32px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action b{font-size:8px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action small,
+  #modal-gasto-deuda.gd-pesos-layout #gd-materiales-resumen{font-size:6.5px!important}
+  #modal-gasto-deuda.gd-pesos-layout .cq-materiales-action button{padding:5px 7px!important;font-size:7.5px!important}
+
+  /* Varias obras: mismo reparto compacto; el modal hace scroll natural hasta Guardar. */
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto.reparto-wrap{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:3px!important;
+    margin-top:3px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .imputacion-resumen{
+    grid-column:1/-1!important;
+    margin:0!important;
+    padding:3px 5px!important;
+    font-size:7px!important;
+    line-height:1.05!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row{
+    grid-template-columns:minmax(0,1fr) 58px!important;
+    gap:3px!important;
+    min-height:26px!important;
+    padding:2px 3px!important;
+    border-radius:6px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row span{
+    font-size:7.2px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto .reparto-row input{
+    min-height:22px!important;
+    height:22px!important;
+    padding:2px 3px!important;
+    font-size:7.5px!important;
+    border-radius:5px!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout #gd-reparto-total{
+    margin-top:4px!important;
+    font-size:7.6px!important;
+    line-height:1.05!important;
+  }
+
+  #modal-gasto-deuda.gd-pesos-layout .mfooter{
+    position:static!important;
+    z-index:auto!important;
+    flex:none!important;
+    min-height:44px!important;
+    padding:6px 11px 7px!important;
+    gap:7px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:none!important;
+  }
+  #modal-gasto-deuda.gd-pesos-layout .mfooter .btn{
+    min-height:34px!important;
+    padding:7px 13px!important;
+    font-size:10px!important;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -2701,27 +3448,57 @@ document.addEventListener('click',function(e){
     document.querySelectorAll('.cq-sub-panel.open').forEach(function(p){p.classList.remove('open');});
   }
 });
-function cqImputacionObras(){
+function cqGastosConfigActualCG(){
   var cfg=CQ_GASTOS_CONFIG_FIREBASE;
   if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
+  return cfg||null;
+}
+function cqObraHabilitadaModuloCG(obra,modulo){
+  if(!obra||!obra.id)return false;
+  if(obra.archived===true)return false;
+  if(String(obra.id)==='oficina')return true;
+  var raw=(obra.modulos&&typeof obra.modulos==='object'&&!Array.isArray(obra.modulos))?obra.modulos:null;
+  // Compatibilidad: las obras que todavía no tienen permisos individuales heredan
+  // la vieja bandera integrarModulos. Así no se altera ninguna obra existente.
+  if(raw&&Object.prototype.hasOwnProperty.call(raw,modulo))return raw[modulo]!==false;
+  return obra.integrarModulos!==false;
+}
+function cqObraIdHabilitadaModuloCG(id,modulo){
+  if(String(id)==='oficina')return true;
+  var cfg=cqGastosConfigActualCG();
+  var obra=(cfg&&Array.isArray(cfg.obras))?cfg.obras.find(function(o){return o&&String(o.id)===String(id);}):null;
+  return obra?cqObraHabilitadaModuloCG(obra,modulo):true;
+}
+function cqImputacionObras(includeIds){
+  var cfg=cqGastosConfigActualCG();
   if(!cfg||!Array.isArray(cfg.obras))return [];
+  var conservar=Array.isArray(includeIds)?includeIds.map(String):(includeIds?[String(includeIds)]:[]);
+
+  // CQ 13/10/2026 — Caja Gerencia respeta exclusivamente su permiso individual.
+  // Una obra destildada deja de ofrecerse para movimientos nuevos, pero si ya estaba
+  // asociada a un movimiento histórico puede incluirse mediante includeIds para editarlo.
   return cfg.obras.filter(function(o){
-    return o&&o.id;
+    if(!o||!o.id||o.archived===true)return false;
+    var id=String(o.id);
+    return cqObraHabilitadaModuloCG(o,'cajaGerencia')||conservar.includes(id);
   }).map(function(o){
     var id=String(o.id);
+    var visible=cqObraHabilitadaModuloCG(o,'cajaGerencia');
     return {
       id:id,
       label:id==='oficina'?'Oficina':String(o.label||o.short||o.id),
-      short:id==='oficina'?'Oficina':String(o.short||o.label||o.id)
+      short:id==='oficina'?'Oficina':String(o.short||o.label||o.id),
+      historica:!visible&&conservar.includes(id)
     };
   });
 }
 function cqRenderObrasDesdeGastos(prefix,existing){
   var wrap=document.getElementById(prefix+'-obras');
   if(!wrap)return;
-  var obras=cqImputacionObras();
+  var historicas=(Array.isArray(existing)?existing:[]).map(function(x){return x&&x.obraId;}).filter(Boolean);
+  var obras=cqImputacionObras(historicas);
 
-  // Conservar únicamente selecciones que todavía existan en Gastos.
+  // Conservar selección histórica aunque hoy la obra esté oculta en Caja Gerencia.
   cqImpSel[prefix]=(cqImpSel[prefix]||[]).filter(function(id){
     return obras.some(function(o){return String(o.id)===String(id);});
   });
@@ -2733,7 +3510,7 @@ function cqRenderObrasDesdeGastos(prefix,existing){
 
   wrap.innerHTML=obras.map(function(o){
     var active=cqImpSel[prefix].includes(o.id);
-    var label=o.label||o.short||o.id;
+    var label=(o.label||o.short||o.id)+(o.historica?' · histórica':'');
     return '<button type="button" class="obra-multi-btn'+(active?' active':'')+'" data-id="'+escapeHTML(o.id)+'" onclick="cqImpToggleObra(\''+prefix+'\',\''+String(o.id).replace(/'/g,"\\'")+'\')">'+escapeHTML(label)+'</button>';
   }).join('');
 
@@ -2845,7 +3622,13 @@ async function cqAbrirCantidadMateriales(prefix){
   if(!subId)return alert('Seleccioná un subrubro.');
   var ids=cqImpSel[prefix]||[];
   if(!ids.length)return alert('Seleccioná al menos una obra.');
-  var obras=cqImputacionObras(),prev={};
+  var bloqueadasMat=ids.filter(function(id){return String(id)!=='oficina'&&!cqObraIdHabilitadaModuloCG(id,'materiales');});
+  if(bloqueadasMat.length){
+    var obrasTodas=cqImputacionObras(ids);
+    var nombres=bloqueadasMat.map(function(id){var o=obrasTodas.find(function(x){return String(x.id)===String(id);});return (o&&o.label)||id;});
+    return alert('No se puede enviar a Materiales: '+nombres.join(', ')+' tiene Materiales deshabilitado en Gastos. El gasto sí puede registrarse normalmente en Caja Gerencia.');
+  }
+  var obras=cqImputacionObras(ids),prev={};
   (cqMaterialesDraft[prefix]||[]).forEach(function(x){prev[x.obraId]=x.qty;});
   document.getElementById('cq-mat-modal-cantidades').innerHTML=ids.map(function(id){
     var o=obras.find(function(x){return x.id===id;})||{label:id};
@@ -2887,8 +3670,10 @@ function cqMaterialesPayloadCaja(mov,entry,active){
     sourceObraId:String(entry.obraId||''),
     comentario:String(mov.imputacionComentario||''),
     obraName:entry.obra,
+    materialId:(mov.materialesProducto&&mov.materialesProducto.id)!=null?mov.materialesProducto.id:null,
     materialCode:(mov.materialesProducto&&mov.materialesProducto.code)||'',
     materialName:(mov.materialesProducto&&mov.materialesProducto.name)||'Material',
+    materialCategory:(mov.materialesProducto&&mov.materialesProducto.category)||'',
     qty:Number(entry.qty)||0,
     unidad:'u',
     fecha:mov.fecha,
@@ -3577,6 +4362,8 @@ function cqActualizarIngresosCambio(sourceMov,fx,fecha,origenLabel,purpose){
 }
 function openGastoDeuda(moneda){
   gdMoneda=moneda; gdEditId=null;
+  var gdModal=document.getElementById('modal-gasto-deuda');
+  if(gdModal)gdModal.classList.toggle('gd-pesos-layout',moneda==='pesos');
   document.getElementById('gd-ttl').textContent='Nuevo gasto';
   document.getElementById('gd-monto-label').textContent='Monto '+(moneda==='pesos'?'$':'u$s');
   document.getElementById('gd-monto').value='';
@@ -3596,6 +4383,8 @@ function selectPayer(btn){
 }
 function openEditDeuda(moneda,id){
   gdMoneda=moneda; gdEditId=id;
+  var gdModal=document.getElementById('modal-gasto-deuda');
+  if(gdModal)gdModal.classList.toggle('gd-pesos-layout',moneda==='pesos');
   var g=deudaList(moneda).find(function(x){return x.id===id;});
   if(!g) return;
   document.getElementById('gd-ttl').textContent='Editar gasto';
@@ -4438,18 +5227,21 @@ function cqIngresoToggleSecciones(){
   if(ff)ff.classList.toggle('off',!(tf&&tf.checked));
 }
 function cqIngresoRenderObras(data){
-  var obras=cqImputacionObras();
+  var conservar=[];
+  if(data&&data.ingresoGastosObraId)conservar.push(String(data.ingresoGastosObraId));
+  if(data&&data.ingresoFinObraId&&!conservar.includes(String(data.ingresoFinObraId)))conservar.push(String(data.ingresoFinObraId));
+  var obras=cqImputacionObras(conservar);
   var g=document.getElementById('ing-gastos-obra');
   var f=document.getElementById('ing-fin-obra');
   if(g){
     var cur=(data&&data.ingresoGastosObraId)||g.value||'';
-    g.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    g.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML((o.label||o.short||o.id)+(o.historica?' · histórica':''))+'</option>';}).join('');
     if(cur&&obras.some(function(o){return String(o.id)===String(cur);}))g.value=cur;
   }
   if(f){
     var curF=(data&&data.ingresoFinObraId)||f.value||'';
     var finObras=obras.filter(function(o){return String(o.id)!=='oficina';});
-    f.innerHTML='<option value="">Seleccionar obra...</option>'+finObras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    f.innerHTML='<option value="">Seleccionar obra...</option>'+finObras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML((o.label||o.short||o.id)+(o.historica?' · histórica':''))+'</option>';}).join('');
     if(curF&&finObras.some(function(o){return String(o.id)===String(curF);}))f.value=curF;
   }
 }
@@ -4678,8 +5470,26 @@ function cqIngresoSyncDot(label,state,error){
 function cqIngresoSyncHTML(mov){
   if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
 }
+function cqIngresoObraNombre(id,fallback){
+  var raw=String(id||'').trim();
+  if(!raw)return '';
+  var cfg=cqGastosConfigActualCG();
+  var obra=(cfg&&Array.isArray(cfg.obras))
+    ? cfg.obras.find(function(o){return o&&String(o.id)===raw;})
+    : null;
+  var nombre=obra?String(obra.label||obra.short||obra.id):String(fallback||raw);
+  return nombre.toUpperCase();
+}
 function cqIngresoDetalleIntegracion(mov){
-  if(!mov)return '';var partes=[];if(mov.ingresoGastosAgregar)partes.push('Gastos · '+(mov.ingresoGastosObraId||'')+' · '+(mov.ingresoGastosSubrubro||''));if(mov.ingresoFinAgregar)partes.push('Resumen · '+(mov.ingresoFinObraId||'')+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
+  if(!mov)return '';
+  var partes=[];
+  if(mov.ingresoGastosAgregar){
+    partes.push('Gastos · '+cqIngresoObraNombre(mov.ingresoGastosObraId,mov.ingresoGastosObraLabel)+' · '+(mov.ingresoGastosSubrubro||''));
+  }
+  if(mov.ingresoFinAgregar){
+    partes.push(cqIngresoObraNombre(mov.ingresoFinObraId,mov.ingresoFinObraLabel)+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));
+  }
+  return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
 }
 
 var ingTipo=null, ingEditId=null;
