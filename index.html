@@ -1,4 +1,4 @@
-<!-- CQ Caja Gerencia · build caja-chica-v2 histórica + ingresos gastos resumen · 2026-10-11 -->
+<!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -2701,33 +2701,57 @@ document.addEventListener('click',function(e){
     document.querySelectorAll('.cq-sub-panel.open').forEach(function(p){p.classList.remove('open');});
   }
 });
-function cqImputacionObras(){
+function cqGastosConfigActualCG(){
   var cfg=CQ_GASTOS_CONFIG_FIREBASE;
   if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
+  return cfg||null;
+}
+function cqObraHabilitadaModuloCG(obra,modulo){
+  if(!obra||!obra.id)return false;
+  if(obra.archived===true)return false;
+  if(String(obra.id)==='oficina')return true;
+  var raw=(obra.modulos&&typeof obra.modulos==='object'&&!Array.isArray(obra.modulos))?obra.modulos:null;
+  // Compatibilidad: las obras que todavía no tienen permisos individuales heredan
+  // la vieja bandera integrarModulos. Así no se altera ninguna obra existente.
+  if(raw&&Object.prototype.hasOwnProperty.call(raw,modulo))return raw[modulo]!==false;
+  return obra.integrarModulos!==false;
+}
+function cqObraIdHabilitadaModuloCG(id,modulo){
+  if(String(id)==='oficina')return true;
+  var cfg=cqGastosConfigActualCG();
+  var obra=(cfg&&Array.isArray(cfg.obras))?cfg.obras.find(function(o){return o&&String(o.id)===String(id);}):null;
+  return obra?cqObraHabilitadaModuloCG(obra,modulo):true;
+}
+function cqImputacionObras(includeIds){
+  var cfg=cqGastosConfigActualCG();
   if(!cfg||!Array.isArray(cfg.obras))return [];
+  var conservar=Array.isArray(includeIds)?includeIds.map(String):(includeIds?[String(includeIds)]:[]);
 
-  // CQ 13/10/2026 — respetar la bandera "Solo Gastos".
-  // Oficina conserva su funcionamiento propio; una obra común con integrarModulos=false
-  // no puede seleccionarse para nuevas imputaciones/vínculos desde Caja Gerencia.
+  // CQ 13/10/2026 — Caja Gerencia respeta exclusivamente su permiso individual.
+  // Una obra destildada deja de ofrecerse para movimientos nuevos, pero si ya estaba
+  // asociada a un movimiento histórico puede incluirse mediante includeIds para editarlo.
   return cfg.obras.filter(function(o){
-    if(!o||!o.id)return false;
-    if(String(o.id)==='oficina')return true;
-    return o.integrarModulos!==false && o.archived!==true;
+    if(!o||!o.id||o.archived===true)return false;
+    var id=String(o.id);
+    return cqObraHabilitadaModuloCG(o,'cajaGerencia')||conservar.includes(id);
   }).map(function(o){
     var id=String(o.id);
+    var visible=cqObraHabilitadaModuloCG(o,'cajaGerencia');
     return {
       id:id,
       label:id==='oficina'?'Oficina':String(o.label||o.short||o.id),
-      short:id==='oficina'?'Oficina':String(o.short||o.label||o.id)
+      short:id==='oficina'?'Oficina':String(o.short||o.label||o.id),
+      historica:!visible&&conservar.includes(id)
     };
   });
 }
 function cqRenderObrasDesdeGastos(prefix,existing){
   var wrap=document.getElementById(prefix+'-obras');
   if(!wrap)return;
-  var obras=cqImputacionObras();
+  var historicas=(Array.isArray(existing)?existing:[]).map(function(x){return x&&x.obraId;}).filter(Boolean);
+  var obras=cqImputacionObras(historicas);
 
-  // Conservar únicamente selecciones que todavía existan en Gastos.
+  // Conservar selección histórica aunque hoy la obra esté oculta en Caja Gerencia.
   cqImpSel[prefix]=(cqImpSel[prefix]||[]).filter(function(id){
     return obras.some(function(o){return String(o.id)===String(id);});
   });
@@ -2739,7 +2763,7 @@ function cqRenderObrasDesdeGastos(prefix,existing){
 
   wrap.innerHTML=obras.map(function(o){
     var active=cqImpSel[prefix].includes(o.id);
-    var label=o.label||o.short||o.id;
+    var label=(o.label||o.short||o.id)+(o.historica?' · histórica':'');
     return '<button type="button" class="obra-multi-btn'+(active?' active':'')+'" data-id="'+escapeHTML(o.id)+'" onclick="cqImpToggleObra(\''+prefix+'\',\''+String(o.id).replace(/'/g,"\\'")+'\')">'+escapeHTML(label)+'</button>';
   }).join('');
 
@@ -2851,7 +2875,13 @@ async function cqAbrirCantidadMateriales(prefix){
   if(!subId)return alert('Seleccioná un subrubro.');
   var ids=cqImpSel[prefix]||[];
   if(!ids.length)return alert('Seleccioná al menos una obra.');
-  var obras=cqImputacionObras(),prev={};
+  var bloqueadasMat=ids.filter(function(id){return String(id)!=='oficina'&&!cqObraIdHabilitadaModuloCG(id,'materiales');});
+  if(bloqueadasMat.length){
+    var obrasTodas=cqImputacionObras(ids);
+    var nombres=bloqueadasMat.map(function(id){var o=obrasTodas.find(function(x){return String(x.id)===String(id);});return (o&&o.label)||id;});
+    return alert('No se puede enviar a Materiales: '+nombres.join(', ')+' tiene Materiales deshabilitado en Gastos. El gasto sí puede registrarse normalmente en Caja Gerencia.');
+  }
+  var obras=cqImputacionObras(ids),prev={};
   (cqMaterialesDraft[prefix]||[]).forEach(function(x){prev[x.obraId]=x.qty;});
   document.getElementById('cq-mat-modal-cantidades').innerHTML=ids.map(function(id){
     var o=obras.find(function(x){return x.id===id;})||{label:id};
@@ -4446,18 +4476,21 @@ function cqIngresoToggleSecciones(){
   if(ff)ff.classList.toggle('off',!(tf&&tf.checked));
 }
 function cqIngresoRenderObras(data){
-  var obras=cqImputacionObras();
+  var conservar=[];
+  if(data&&data.ingresoGastosObraId)conservar.push(String(data.ingresoGastosObraId));
+  if(data&&data.ingresoFinObraId&&!conservar.includes(String(data.ingresoFinObraId)))conservar.push(String(data.ingresoFinObraId));
+  var obras=cqImputacionObras(conservar);
   var g=document.getElementById('ing-gastos-obra');
   var f=document.getElementById('ing-fin-obra');
   if(g){
     var cur=(data&&data.ingresoGastosObraId)||g.value||'';
-    g.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    g.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML((o.label||o.short||o.id)+(o.historica?' · histórica':''))+'</option>';}).join('');
     if(cur&&obras.some(function(o){return String(o.id)===String(cur);}))g.value=cur;
   }
   if(f){
     var curF=(data&&data.ingresoFinObraId)||f.value||'';
     var finObras=obras.filter(function(o){return String(o.id)!=='oficina';});
-    f.innerHTML='<option value="">Seleccionar obra...</option>'+finObras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML(o.label||o.short||o.id)+'</option>';}).join('');
+    f.innerHTML='<option value="">Seleccionar obra...</option>'+finObras.map(function(o){return '<option value="'+escapeHTML(o.id)+'">'+escapeHTML((o.label||o.short||o.id)+(o.historica?' · histórica':''))+'</option>';}).join('');
     if(curF&&finObras.some(function(o){return String(o.id)===String(curF);}))f.value=curF;
   }
 }
