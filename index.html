@@ -4733,8 +4733,26 @@ function cqIngresoSyncDot(label,state,error){
 function cqIngresoSyncHTML(mov){
   if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
 }
+function cqIngresoObraNombre(id,fallback){
+  var raw=String(id||'').trim();
+  if(!raw)return '';
+  var cfg=cqGastosConfigActualCG();
+  var obra=(cfg&&Array.isArray(cfg.obras))
+    ? cfg.obras.find(function(o){return o&&String(o.id)===raw;})
+    : null;
+  var nombre=obra?String(obra.label||obra.short||obra.id):String(fallback||raw);
+  return nombre.toUpperCase();
+}
 function cqIngresoDetalleIntegracion(mov){
-  if(!mov)return '';var partes=[];if(mov.ingresoGastosAgregar)partes.push('Gastos · '+(mov.ingresoGastosObraId||'')+' · '+(mov.ingresoGastosSubrubro||''));if(mov.ingresoFinAgregar)partes.push('Resumen · '+(mov.ingresoFinObraId||'')+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
+  if(!mov)return '';
+  var partes=[];
+  if(mov.ingresoGastosAgregar){
+    partes.push('Gastos · '+cqIngresoObraNombre(mov.ingresoGastosObraId,mov.ingresoGastosObraLabel)+' · '+(mov.ingresoGastosSubrubro||''));
+  }
+  if(mov.ingresoFinAgregar){
+    partes.push(cqIngresoObraNombre(mov.ingresoFinObraId,mov.ingresoFinObraLabel)+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));
+  }
+  return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
 }
 
 var ingTipo=null, ingEditId=null;
