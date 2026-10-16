@@ -2383,6 +2383,25 @@ var DB_KEY='gastos_cq_v1';
 var FIRESTORE_COLLECTION='cq_caja';
 var FIRESTORE_DOC_ID='gastos_compartidos_v1';
 var firebaseSaving=false, firebaseUnsub=null, saveTimer=null, firebaseSavePromise=null;
+// CQ 16/10/2026 — cola segura multiusuario.
+// Cada persistencia incrementa una revisión. Si cambia DB mientras una transacción está en vuelo,
+// esa transacción confirma sólo su foto inicial y la revisión nueva se conserva para el siguiente envío.
+var cqCajaLocalRevision=0;
+var cqLastGeneratedMovementId=0;
+function cqNuevoMovimientoId(){
+  // ID numérico compatible con todo el código existente, pero con entropía adicional entre dispositivos.
+  // 8 ms por bloque + 15 bits aleatorios mantiene el valor dentro del entero seguro de JavaScript.
+  var bucket=Math.floor(Date.now()/8);
+  var rnd=0;
+  try{
+    if(window.crypto&&window.crypto.getRandomValues){var a=new Uint16Array(1);window.crypto.getRandomValues(a);rnd=a[0]&32767;}
+    else rnd=Math.floor(Math.random()*32768);
+  }catch(e){rnd=Math.floor(Math.random()*32768);}
+  var id=bucket*32768+rnd;
+  if(id<=cqLastGeneratedMovementId)id=cqLastGeneratedMovementId+1;
+  cqLastGeneratedMovementId=id;
+  return id;
+}
 // CQ 25/08/2026 — guardia de arranque segura.
 var cqCajaRemoteLoaded=false;
 var cqCajaRemoteLoadError=false;
@@ -2510,6 +2529,7 @@ function renderActividad(){
 function persist(activityText){
   DB=sanitizeDB(DB);
   if(activityText){addActivity(activityText);pendingActivity=activityText;}
+  cqCajaLocalRevision++;
   cqCajaLocalDirty=true;
   localStorage.setItem(DB_KEY,JSON.stringify(DB));
   scheduleFirebaseSave();
@@ -2528,17 +2548,26 @@ async function saveToFirebase(){
     return false;
   }
 
-  if(firebaseSavePromise)return firebaseSavePromise;
+  // Si ya hay un guardado en vuelo, esperar ese guardado y, si mientras tanto hubo otra carga,
+  // encadenar automáticamente un segundo guardado. Nunca damos por confirmada una revisión pendiente.
+  if(firebaseSavePromise){
+    return firebaseSavePromise.then(function(ok){
+      if(!ok)return false;
+      return cqCajaLocalDirty?saveToFirebase():true;
+    });
+  }
   clearTimeout(saveTimer);
   firebaseSavePromise=(async function(){
+    var snapshotRevision=cqCajaLocalRevision;
+    var localSnapshot=sanitizeDB(DB);
+    var activitySnapshot=pendingActivity||null;
+    var savedPayload=null;
+    var guardarSiguiente=false;
     try{
       firebaseSaving=true;
       setSyncStatus('Sync: guardando...');
       var f=window._cqFirebase;
       var ref=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
-      var localSnapshot=sanitizeDB(DB);
-      var activitySnapshot=pendingActivity||null;
-      var savedPayload=null;
       await f.runTransaction(f.db,async function(tx){
         var snap=await tx.get(ref);
         var remote=snap.exists()?(snap.data()||{}):{};
@@ -2552,15 +2581,27 @@ async function saveToFirebase(){
         savedPayload={db:merged,updatedAt:new Date().toISOString(),lastActivity:activitySnapshot};
         tx.set(ref,savedPayload);
       });
-      DB=sanitizeDB(savedPayload.db);
-      cqCajaLastRemoteDB=sanitizeDB(savedPayload.db);
+
+      var confirmado=sanitizeDB(savedPayload.db);
+      cqCajaLastRemoteDB=confirmado;
       lastRemoteUpdatedAt=savedPayload.updatedAt;
-      cqCajaLocalDirty=false;
-      cqCajaDeferredRemote=null;
-      suppressRemoteUntil=Date.now()+900;
-      localStorage.setItem(DB_KEY,JSON.stringify(DB));
-      pendingActivity=null;
-      setSyncStatus('Sync: ON');
+      suppressRemoteUntil=Date.now()+250;
+
+      if(cqCajaLocalRevision!==snapshotRevision){
+        // Hubo una carga/modificación/baja mientras Firebase estaba guardando.
+        // Conservarla sobre la versión recién confirmada; NO reemplazar DB por la foto vieja.
+        DB=cqCajaRebaseLocalSobreRemoto(localSnapshot,sanitizeDB(DB),confirmado);
+        cqCajaLocalDirty=true;
+        guardarSiguiente=true;
+        localStorage.setItem(DB_KEY,JSON.stringify(DB));
+        setSyncStatus('Sync: pendiente');
+      }else{
+        DB=confirmado;
+        cqCajaLocalDirty=false;
+        localStorage.setItem(DB_KEY,JSON.stringify(DB));
+        pendingActivity=null;
+        setSyncStatus('Sync: ON');
+      }
       renderCurrent();
       return true;
     }catch(e){
@@ -2573,6 +2614,13 @@ async function saveToFirebase(){
     }finally{
       firebaseSaving=false;
       firebaseSavePromise=null;
+      // Si entró otra operación durante el guardado, enviarla inmediatamente a continuación.
+      if(guardarSiguiente){
+        clearTimeout(saveTimer);
+        saveTimer=setTimeout(function(){saveToFirebase();},0);
+      }else if(!cqCajaLocalDirty){
+        setTimeout(cqAplicarRemotoDiferidoSiSeguro,0);
+      }
     }
   })();
   return firebaseSavePromise;
@@ -2685,6 +2733,23 @@ async function loadFromFirebase(){
     return false;
   }
 }
+function cqAplicarRemotoDiferidoSiSeguro(){
+  if(!cqCajaDeferredRemote||cqCajaLocalDirty||firebaseSaving||firebaseSavePromise)return false;
+  var data=cqCajaDeferredRemote;
+  cqCajaDeferredRemote=null;
+  if(!data||!data.db)return false;
+  // El snapshot de nuestra propia escritura puede haber quedado diferido: si es el mismo, no rehacer nada.
+  if(data.updatedAt&&lastRemoteUpdatedAt&&data.updatedAt===lastRemoteUpdatedAt)return true;
+  var isNew=lastRemoteUpdatedAt&&data.updatedAt&&data.updatedAt!==lastRemoteUpdatedAt;
+  DB=sanitizeDB(data.db);
+  cqCajaLastRemoteDB=sanitizeDB(data.db);
+  lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
+  localStorage.setItem(DB_KEY,JSON.stringify(DB));
+  setSyncStatus('Sync: ON');
+  renderCurrent();
+  if(isNew&&data.lastActivity)toast(data.lastActivity);
+  return true;
+}
 function listenFirebase(){
   if(firebaseUnsub||!window._cqFirebaseReady||!window._cqFirebase)return;
   var f=window._cqFirebase;
@@ -2695,7 +2760,7 @@ function listenFirebase(){
     cqCajaRemoteLoadError=false;
 
     // Nunca permitir que un snapshot entrante pise una carga/modificación/baja local todavía no confirmada.
-    if(cqCajaLocalDirty||firebaseSaving||firebaseSavePromise||Date.now()<suppressRemoteUntil){
+    if(cqCajaLocalDirty||firebaseSaving||firebaseSavePromise){
       cqCajaDeferredRemote=data;
       return;
     }
@@ -4311,7 +4376,7 @@ function cqCrearIngresosCambioPesos(fx,fecha,origenLabel,sourceId,purpose){
   if(fx.fondo>0){
     if(!DB.fondoPesosMovs)DB.fondoPesosMovs=[];
     DB.fondoPesosMovs.push(Object.assign({},base,{
-      id:Date.now()+11,
+      id:cqNuevoMovimientoId(),
       monto:fx.fondo,
       cambioDestino:'Fondo común $'
     }));
@@ -4319,7 +4384,7 @@ function cqCrearIngresosCambioPesos(fx,fecha,origenLabel,sourceId,purpose){
   if(fx.banco>0){
     if(!DB.santanderMovs)DB.santanderMovs=[];
     DB.santanderMovs.push(Object.assign({},base,{
-      id:Date.now()+22,
+      id:cqNuevoMovimientoId(),
       monto:fx.banco,
       cambioDestino:'Cuenta Santander $'
     }));
@@ -4448,7 +4513,7 @@ async function guardarGastoDeuda(){
     toast('✓ Gasto actualizado');
     persist('Se modificó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
   } else {
-    var nuevo=Object.assign({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
+    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
     if(tc) nuevo.tc=tc;
     if(esCambio){
       nuevo.desc='Cambio de moneda';
@@ -4559,7 +4624,7 @@ function confirmarPagoParcial(){
     toast('✓ Pago parcial actualizado');
   }else{
     lista.push({
-      id:Date.now(),tipo:'pago_parcial',monto:monto,desc:desc,fecha:fecha,pagador:pagador,
+      id:cqNuevoMovimientoId(),tipo:'pago_parcial',monto:monto,desc:desc,fecha:fecha,pagador:pagador,
       creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()
     });
     persist('Se cargó un pago parcial de '+fmtMon(moneda,monto)+' en '+labelDeuda(moneda));
@@ -4592,7 +4657,7 @@ function confirmarLiquidar(){
   var monto=Math.abs(d1);
   var fecha=document.getElementById('liquidar-fecha').value||todayISO();
   // Se registra como pago directo entre socios, no como gasto de la empresa
-  deudaList(moneda).push({id:Date.now(),tipo:'liquidacion',monto:monto,desc:'Liquidación de saldo',fecha:fecha,pagador:deudor});
+  deudaList(moneda).push({id:cqNuevoMovimientoId(),tipo:'liquidacion',monto:monto,desc:'Liquidación de saldo',fecha:fecha,pagador:deudor});
   persist('Se liquidó una deuda de '+fmtMon(moneda,monto)+' en '+labelDeuda(moneda));closeModal('modal-liquidar');toast('✓ Cuentas liquidadas');renderDeuda(moneda);
 }
 
@@ -5161,7 +5226,7 @@ async function guardarGastoFondo(){
     toast('✓ Gasto actualizado');
     persist('Se modificó un gasto de '+cfg.fmt(monto)+' en '+labelFondo(gfTipo));
   } else {
-    var nuevo=Object.assign({id:Date.now(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
+    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
     if(tc) nuevo.tc=tc;
     if(esCambio){
       nuevo.desc='Cambio de moneda';
@@ -5535,7 +5600,7 @@ async function guardarIngreso(){
     if(idx>=0){oldMov=JSON.parse(JSON.stringify(DB[cfg.movs][idx]));DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],integraciones,{monto:monto,desc:desc,fecha:fecha,cajaTipo:ingTipo,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},(tc?{tc:tc}:{}));movSync=DB[cfg.movs][idx];}
     toast('✓ Ingreso actualizado');persist('Se modificó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   } else {
-    var nuevo=Object.assign({id:Date.now(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha,cajaTipo:ingTipo,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},integraciones);if(tc)nuevo.tc=tc;DB[cfg.movs].push(nuevo);movSync=nuevo;
+    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'ingreso',monto:monto,desc:desc,fecha:fecha,cajaTipo:ingTipo,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},integraciones);if(tc)nuevo.tc=tc;DB[cfg.movs].push(nuevo);movSync=nuevo;
     toast('✓ Ingreso registrado: '+cfg.fmt(monto));persist('Se cargó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   }
   closeModal('modal-ingreso');renderFondo(ingTipo);
