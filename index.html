@@ -3746,6 +3746,217 @@ function cqMaterialesPayloadCaja(mov,entry,active){
     updatedAt:new Date().toISOString()
   };
 }
+
+
+/* ==========================================================
+   CQ CAJA GERENCIA — MATERIALIZACIÓN DIRECTA EN MATERIALES
+   Materiales ya no consume materiales_integraciones como fuente activa.
+   Esta capa escribe primero en materiales/data_planilla_exacta_v4 y deja
+   materiales_integraciones únicamente como respaldo/auditoría.
+   ========================================================== */
+var CQ_CG_MAT_OBRAS_BASE_DIRECTO=["14/66","26/59","10/15","17/55","8/54","20/89","19/83","3/85","11/93","8/86","4/86","25/100","19/99","4/100","25/85","5/94","25/82","12/93","13/93","7/100","6/92","18/78","5/98","27/99","2/99"];
+
+function cqCgMatNorm(v){
+  return String(v||'').toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'')
+    .trim();
+}
+function cqCgMatClaveObra(v){
+  var raw=String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  var m=raw.match(/(?:lote|l)?\s*(\d+)\s*(?:\/|[- ]*mz|[- ]*manzana)\s*(\d+)/i);
+  if(m)return Number(m[1])+'/'+Number(m[2]);
+  m=raw.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+  return m?(Number(m[1])+'/'+Number(m[2])):'';
+}
+function cqCgMatObras(data){
+  var base=CQ_CG_MAT_OBRAS_BASE_DIRECTO.map(function(n,i){
+    return data.obraNombres&&data.obraNombres[i]!=null?String(data.obraNombres[i]):String(n);
+  });
+  return base.concat(Array.isArray(data.extraObras)?data.extraObras.map(String):[]);
+}
+function cqCgMatResolverObra(data,nombre){
+  if(!Array.isArray(data.extraObras))data.extraObras=[];
+  var obras=cqCgMatObras(data), exact=cqCgMatNorm(nombre);
+  for(var i=0;i<obras.length;i++){
+    if(cqCgMatNorm(obras[i])===exact)return i;
+  }
+  var clave=cqCgMatClaveObra(nombre);
+  if(clave){
+    for(var b=0;b<CQ_CG_MAT_OBRAS_BASE_DIRECTO.length;b++){
+      if(cqCgMatClaveObra(CQ_CG_MAT_OBRAS_BASE_DIRECTO[b])===clave)return b;
+    }
+    for(var e=0;e<data.extraObras.length;e++){
+      if(cqCgMatClaveObra(data.extraObras[e])===clave){
+        if(String(nombre||'').trim())data.extraObras[e]=String(nombre).trim();
+        return CQ_CG_MAT_OBRAS_BASE_DIRECTO.length+e;
+      }
+    }
+  }
+  if(!String(nombre||'').trim())return -1;
+  data.extraObras.push(String(nombre).trim());
+  return CQ_CG_MAT_OBRAS_BASE_DIRECTO.length+data.extraObras.length-1;
+}
+function cqCgMatCodigo(data,mat){
+  var mapa=data.matCodigos&&typeof data.matCodigos==='object'?data.matCodigos:{};
+  return String(mapa[mat.id]!=null?mapa[mat.id]:(mat.codigo||mat.code||'')).trim();
+}
+function cqCgMatTodos(data){
+  var ren=data.matNombres&&typeof data.matNombres==='object'?data.matNombres:{};
+  var cod=data.matCodigos&&typeof data.matCodigos==='object'?data.matCodigos:{};
+  var cats=data.matCategorias&&typeof data.matCategorias==='object'?data.matCategorias:{};
+  var base=(CQ_BASE_CATALOGO_MATERIALES||[]).map(function(x){
+    return {
+      id:x.id,
+      mat:String(ren[x.id]!=null?ren[x.id]:(x.name||'')),
+      codigo:String(cod[x.id]!=null?cod[x.id]:(x.code||'')),
+      catName:String(cats[x.id]!=null?cats[x.id]:(x.category||'VARIOS'))
+    };
+  });
+  var extras=[]
+    .concat(Array.isArray(data.extraMats)?data.extraMats:[])
+    .concat(Array.isArray(data.materialesNuevos)?data.materialesNuevos:[])
+    .map(function(x){
+      var id=x.id;
+      return Object.assign({},x,{
+        id:id,
+        mat:String(ren[id]!=null?ren[id]:(x.mat||x.name||'')),
+        codigo:String(cod[id]!=null?cod[id]:(x.codigo||x.code||'')),
+        catName:String(cats[id]!=null?cats[id]:(x.catName||x.category||'VARIOS'))
+      });
+    });
+  var porId={};
+  base.concat(extras).forEach(function(x){if(x&&x.id!=null)porId[String(x.id)]=x;});
+  return Object.keys(porId).map(function(k){return porId[k];});
+}
+function cqCgMatResolverMat(data,ev){
+  if(!Array.isArray(data.extraMats))data.extraMats=[];
+  if(!data.matCodigos||typeof data.matCodigos!=='object')data.matCodigos={};
+  if(!data.matCategorias||typeof data.matCategorias!=='object')data.matCategorias={};
+  if(!data.matNombres||typeof data.matNombres!=='object')data.matNombres={};
+
+  var deleted=Array.isArray(data.deletedMatIds)?data.deletedMatIds.map(String):[];
+  var mats=cqCgMatTodos(data).filter(function(x){return deleted.indexOf(String(x.id))<0;});
+  var incomingId=ev.materialId!=null?String(ev.materialId):'';
+  var nombre=String(ev.materialName||'').trim();
+  var nk=cqCgMatNorm(nombre);
+  var code=String(ev.materialCode||'').trim().toLowerCase();
+  var mat=null;
+
+  // El producto viene seleccionado desde el catálogo real de Materiales:
+  // su ID es la referencia principal y evita ambigüedades por código/nombre.
+  if(incomingId)mat=mats.find(function(x){return String(x.id)===incomingId;})||null;
+  if(!mat&&nk)mat=mats.find(function(x){return cqCgMatNorm(x.mat)===nk;})||null;
+  if(!mat&&code)mat=mats.find(function(x){return cqCgMatCodigo(data,x).toLowerCase()===code;})||null;
+
+  if(!mat){
+    var nextId=10000;
+    mats.forEach(function(x){if(Number(x.id)>=nextId)nextId=Number(x.id)+1;});
+    var cat=String(ev.materialCategory||ev.category||'VARIOS').trim()||'VARIOS';
+    mat={
+      id:incomingId||nextId,
+      mat:nombre||'Material',
+      codigo:String(ev.materialCode||'').trim(),
+      prom:0,
+      data:[],
+      catName:cat,
+      comentarios:'Creado automáticamente desde Caja Gerencia',
+      autoCreated:true
+    };
+    data.extraMats.push(mat);
+    data.matCategorias[mat.id]=cat;
+    if(mat.codigo)data.matCodigos[mat.id]=mat.codigo;
+  }
+
+  var incomingCode=String(ev.materialCode||'').trim();
+  if(incomingCode&&!cqCgMatCodigo(data,mat))data.matCodigos[mat.id]=incomingCode;
+  return mat;
+}
+function cqCgMatAplicarEvento(data,ev){
+  data=data||{};
+  if(!Array.isArray(data.cargas))data.cargas=[];
+  if(!Array.isArray(data.extraObras))data.extraObras=[];
+  if(!Array.isArray(data.extraMats))data.extraMats=[];
+  if(!data.matCodigos||typeof data.matCodigos!=='object')data.matCodigos={};
+  if(!data.matCategorias||typeof data.matCategorias!=='object')data.matCategorias={};
+
+  var iid=String(ev.integrationId||'');
+  if(!iid)return {data:data,cambio:false};
+  var idx=data.cargas.findIndex(function(c){return String(c&&c.integracionId||'')===iid;});
+
+  if(ev.active===false){
+    if(idx<0)return {data:data,cambio:false};
+    var matId=data.cargas[idx].matId;
+    data.cargas.splice(idx,1);
+
+    // Si el material había sido creado automáticamente sólo para esta carga,
+    // limpiarlo cuando ya no quede ninguna referencia.
+    var sigue=data.cargas.some(function(c){return String(c.matId)===String(matId);});
+    if(!sigue){
+      var extra=(data.extraMats||[]).find(function(x){return String(x.id)===String(matId);});
+      if(extra&&(extra.autoCreated===true||String(extra.comentarios||'').indexOf('Creado automáticamente desde ')===0)){
+        data.extraMats=data.extraMats.filter(function(x){return String(x.id)!==String(matId);});
+        delete data.matCodigos[matId];
+        delete data.matCategorias[matId];
+        if(data.matNombres)delete data.matNombres[matId];
+      }
+    }
+    return {data:data,cambio:true};
+  }
+
+  var obraIdx=cqCgMatResolverObra(data,ev.obraName||'');
+  var mat=cqCgMatResolverMat(data,ev);
+  if(obraIdx<0||!mat)throw new Error('No se pudo resolver obra/material en Materiales');
+
+  var obras=cqCgMatObras(data);
+  var prev=idx>=0?data.cargas[idx]:null;
+  var entry={
+    id:prev&&prev.id!=null?prev.id:(Date.now()+Math.floor(Math.random()*1000)),
+    obraIdx:obraIdx,
+    obraName:obras[obraIdx]||String(ev.obraName||''),
+    matId:mat.id,
+    matName:mat.mat,
+    qty:Number(ev.qty)||0,
+    nota:'Automático · Caja Gerencia',
+    fecha:ev.fecha||new Date().toISOString().slice(0,10),
+    fechaHoraCarga:prev?(prev.fechaHoraCarga||prev.id||Date.now()):Date.now(),
+    origen:'caja_gerencia',
+    sourceMovementId:ev.sourceMovementId||'',
+    automatico:true,
+    integracionId:iid,
+    codigoOrigen:ev.materialCode||'',
+    materialIdOrigen:ev.materialId!=null?ev.materialId:'',
+    materialNameOrigen:ev.materialName||'',
+    obraNameOrigen:ev.obraName||''
+  };
+
+  var mismo=prev
+    && Number(prev.obraIdx)===Number(entry.obraIdx)
+    && String(prev.matId)===String(entry.matId)
+    && Number(prev.qty)===Number(entry.qty)
+    && String(prev.fecha||'')===String(entry.fecha||'')
+    && String(prev.nota||'')===String(entry.nota||'');
+  if(mismo)return {data:data,cambio:false};
+  if(idx>=0)data.cargas[idx]=entry;else data.cargas.push(entry);
+  return {data:data,cambio:true};
+}
+async function cqCgMaterializarDirecto(ev){
+  var f=window._cqFirebase;
+  if(!f||!f.runTransaction)throw new Error('Firebase transaccional no disponible');
+  var ref=f.doc(f.db,'materiales','data_planilla_exacta_v4');
+  await f.runTransaction(f.db,async function(tx){
+    var snap=await tx.get(ref);
+    var data=snap.exists()?(snap.data()||{}):{};
+    try{delete data.updatedAt;}catch(_e){}
+    var r=cqCgMatAplicarEvento(data,ev);
+    if(r.cambio){
+      r.data.updatedAt=new Date().toISOString();
+      r.data.updatedByIntegration=String(ev.integrationId||'');
+      tx.set(ref,r.data);
+    }
+  });
+  return true;
+}
 async function cqSyncMovimientoMateriales(mov,oldMov){
   var f=window._cqFirebase;
   if(!f)throw new Error('Firebase no está disponible');
@@ -3753,15 +3964,29 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
   var viejas=(oldMov&&oldMov.materialesAgregar&&Array.isArray(oldMov.materialesCantidades))?oldMov.materialesCantidades:[];
   var ids=[];
   nuevas.concat(viejas).forEach(function(x){if(x&&x.obraId&&!ids.includes(x.obraId))ids.push(x.obraId);});
+
   for(var i=0;i<ids.length;i++){
     var id=ids[i],nueva=nuevas.find(function(x){return x.obraId===id;}),vieja=viejas.find(function(x){return x.obraId===id;});
     var base=nueva||vieja;
-    await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,id)),cqMaterialesPayloadCaja(mov,base,!!nueva));
+    var payload=cqMaterialesPayloadCaja(mov,base,!!nueva);
+
+    // 1) Fuente real: Materiales lee este documento principal.
+    // El punto verde sólo puede aparecer después de confirmar esta transacción.
+    await cqCgMaterializarDirecto(payload);
+
+    // 2) Respaldo/auditoría. Si falla, no invalida la carga real ya confirmada.
+    try{
+      await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,id)),payload);
+    }catch(e){
+      console.warn('Respaldo materiales_integraciones no disponible',e);
+    }
   }
+
   mov.materialesSyncEstado=nuevas.length?'ok':'no';
   mov.materialesSyncError=nuevas.length?'':'No se agregó a Materiales';
   mov.materialesSyncAt=new Date().toISOString();
   persist();renderCurrent();
+  setTimeout(cqVerificarSincronizacionesMateriales,350);
 }
 function cqLanzarSyncMaterialesCaja(mov,oldMov){
   if(!mov)return;
@@ -3781,7 +4006,17 @@ async function cqEliminarVinculosMateriales(mov){
   try{
     for(var i=0;i<mov.materialesCantidades.length;i++){
       var x=mov.materialesCantidades[i];
-      await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,x.obraId)),cqMaterialesPayloadCaja(mov,x,false));
+      var payload=cqMaterialesPayloadCaja(mov,x,false);
+
+      // Eliminar primero del documento real de Materiales.
+      await cqCgMaterializarDirecto(payload);
+
+      // Mantener auditoría sin convertirla en requisito para la eliminación real.
+      try{
+        await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,x.obraId)),payload);
+      }catch(e){
+        console.warn('Respaldo materiales_integraciones no disponible',e);
+      }
     }
     return true;
   }catch(e){
@@ -3811,11 +4046,6 @@ async function cqVerificarSincronizacionesMateriales(){
     var cambio=false;
 
     movs.forEach(function(m){
-      // Si Firebase acaba de confirmar la escritura de la integración,
-      // mantener el verde mientras Materiales termina de incorporarla a su documento principal.
-      var syncAge=m.materialesSyncAt?(Date.now()-new Date(m.materialesSyncAt).getTime()):Infinity;
-      if(m.materialesSyncEstado==='ok' && syncAge>=0 && syncAge<10000)return;
-
       var next='error',err='';
       if(!m.materialesAgregar){
         next='no';
