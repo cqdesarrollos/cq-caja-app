@@ -2405,7 +2405,7 @@ function cqNuevoMovimientoId(){
 // CQ 25/08/2026 — guardia de arranque segura.
 var cqCajaRemoteLoaded=false;
 var cqCajaRemoteLoadError=false;
-var suppressRemoteUntil=0, pendingActivity=null, lastRemoteUpdatedAt=null;
+var suppressRemoteUntil=0, pendingActivity=null, lastRemoteUpdatedAt=null, lastRemoteRevision=0;
 // CQ 30/08/2026 — protección multi-dispositivo: conservar cambios locales hasta confirmación remota.
 var cqCajaLocalDirty=false, cqCajaLastRemoteDB=null, cqCajaDeferredRemote=null;
 var currentTab='deuda-pesos';
@@ -2573,18 +2573,24 @@ async function saveToFirebase(){
         var remote=snap.exists()?(snap.data()||{}):{};
         if(!remote.db)throw new Error('CAJA_REMOTA_INVALIDA');
         var remoteDB=sanitizeDB(remote.db);
+        var remoteRevision=Number(remote.revision)||0;
         var merged=localSnapshot;
         // Si otro dispositivo cambió Caja desde nuestra última base, rebasar únicamente nuestros cambios.
-        if(lastRemoteUpdatedAt&&remote.updatedAt&&remote.updatedAt!==lastRemoteUpdatedAt){
+        // Desde esta versión se usa una revisión monotónica de Firestore; updatedAt queda como fallback para documentos viejos.
+        var remotoCambio=lastRemoteRevision>0
+          ? remoteRevision!==lastRemoteRevision
+          : !!(lastRemoteUpdatedAt&&remote.updatedAt&&remote.updatedAt!==lastRemoteUpdatedAt);
+        if(remotoCambio){
           merged=cqCajaRebaseLocalSobreRemoto(cqCajaLastRemoteDB||remoteDB,localSnapshot,remoteDB);
         }
-        savedPayload={db:merged,updatedAt:new Date().toISOString(),lastActivity:activitySnapshot};
+        savedPayload={db:merged,updatedAt:new Date().toISOString(),revision:remoteRevision+1,lastActivity:activitySnapshot};
         tx.set(ref,savedPayload);
       });
 
       var confirmado=sanitizeDB(savedPayload.db);
       cqCajaLastRemoteDB=confirmado;
       lastRemoteUpdatedAt=savedPayload.updatedAt;
+      lastRemoteRevision=Number(savedPayload.revision)||lastRemoteRevision;
       suppressRemoteUntil=Date.now()+250;
 
       if(cqCajaLocalRevision!==snapshotRevision){
@@ -2714,6 +2720,7 @@ async function loadFromFirebase(){
     cqCajaLocalDirty=false;
     cqCajaDeferredRemote=null;
     lastRemoteUpdatedAt=snap.data().updatedAt||null;
+    lastRemoteRevision=Number(snap.data().revision)||0;
     localStorage.setItem(DB_KEY,JSON.stringify(DB));
 
     // Recién ahora se habilitan escrituras.
@@ -2738,12 +2745,26 @@ function cqAplicarRemotoDiferidoSiSeguro(){
   var data=cqCajaDeferredRemote;
   cqCajaDeferredRemote=null;
   if(!data||!data.db)return false;
-  // El snapshot de nuestra propia escritura puede haber quedado diferido: si es el mismo, no rehacer nada.
-  if(data.updatedAt&&lastRemoteUpdatedAt&&data.updatedAt===lastRemoteUpdatedAt)return true;
-  var isNew=lastRemoteUpdatedAt&&data.updatedAt&&data.updatedAt!==lastRemoteUpdatedAt;
+
+  // CQ 23/10/2026 — nunca aplicar después un snapshot anterior al estado ya confirmado.
+  // Esto evita que Gastos/Materiales terminen correctamente y luego Caja vuelva a una foto vieja.
+  var dataRevision=Number(data.revision)||0;
+  if(dataRevision>0&&lastRemoteRevision>0){
+    if(dataRevision<=lastRemoteRevision)return true;
+  }else if(lastRemoteRevision>0&&dataRevision===0){
+    // Documento/snapshot legado sin revisión recibido después de haber adoptado el esquema nuevo: es obsoleto.
+    return true;
+  }else if(data.updatedAt&&lastRemoteUpdatedAt&&data.updatedAt===lastRemoteUpdatedAt){
+    return true;
+  }
+
+  var isNew=dataRevision>0&&lastRemoteRevision>0
+    ? dataRevision>lastRemoteRevision
+    : !!(lastRemoteUpdatedAt&&data.updatedAt&&data.updatedAt!==lastRemoteUpdatedAt);
   DB=sanitizeDB(data.db);
   cqCajaLastRemoteDB=sanitizeDB(data.db);
   lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
+  if(dataRevision>0)lastRemoteRevision=dataRevision;
   localStorage.setItem(DB_KEY,JSON.stringify(DB));
   setSyncStatus('Sync: ON');
   renderCurrent();
@@ -2765,10 +2786,18 @@ function listenFirebase(){
       return;
     }
 
-    var isNew=lastRemoteUpdatedAt && data.updatedAt && data.updatedAt!==lastRemoteUpdatedAt;
+    var dataRevision=Number(data.revision)||0;
+    // Ignorar snapshots repetidos o viejos. Con revisión monotónica no dependemos del reloj de cada teléfono/tablet.
+    if(dataRevision>0&&lastRemoteRevision>0&&dataRevision<=lastRemoteRevision)return;
+    if(lastRemoteRevision>0&&dataRevision===0)return;
+
+    var isNew=dataRevision>0&&lastRemoteRevision>0
+      ? dataRevision>lastRemoteRevision
+      : !!(lastRemoteUpdatedAt && data.updatedAt && data.updatedAt!==lastRemoteUpdatedAt);
     DB=sanitizeDB(data.db);
     cqCajaLastRemoteDB=sanitizeDB(data.db);
     lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
+    if(dataRevision>0)lastRemoteRevision=dataRevision;
     localStorage.setItem(DB_KEY,JSON.stringify(DB));
     setSyncStatus('Sync: ON');
     renderCurrent();
@@ -2926,6 +2955,7 @@ async function cqRestaurarBackupCaja(id){
 
     // La restauración exige que Caja no haya cambiado entre la lectura y la escritura.
     var nuevoUpdatedAt=new Date().toISOString();
+    var nuevoRevision=0;
     await f.runTransaction(f.db,async function(tx){
       var snap=await tx.get(cajaRef);
       var remoto=snap.exists()?(snap.data()||{}):{};
@@ -2933,14 +2963,17 @@ async function cqRestaurarBackupCaja(id){
       if((remoto.updatedAt||null)!==(actual.updatedAt||null)){
         var er=new Error('CONFLICTO_RESTAURACION'); er.code='CONFLICTO_RESTAURACION'; throw er;
       }
+      nuevoRevision=(Number(remoto.revision)||0)+1;
       tx.set(cajaRef,{
         db:backupDB,
         updatedAt:nuevoUpdatedAt,
+        revision:nuevoRevision,
         lastActivity:'Backup restaurado: '+id
       });
     });
 
     lastRemoteUpdatedAt=nuevoUpdatedAt;
+    lastRemoteRevision=nuevoRevision||lastRemoteRevision;
     DB=backupDB;
     localStorage.setItem(DB_KEY,JSON.stringify(DB));
     renderCurrent();
