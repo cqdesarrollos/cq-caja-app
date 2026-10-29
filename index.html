@@ -3973,22 +3973,37 @@ function cqCgMatAplicarEvento(data,ev){
   if(idx>=0)data.cargas[idx]=entry;else data.cargas.push(entry);
   return {data:data,cambio:true};
 }
-async function cqCgMaterializarDirecto(ev){
+async function cqCgMaterializarDirectoLote(eventos){
   var f=window._cqFirebase;
   if(!f||!f.runTransaction)throw new Error('Firebase transaccional no disponible');
+  eventos=(Array.isArray(eventos)?eventos:[]).filter(function(ev){return ev&&ev.integrationId;});
+  if(!eventos.length)return true;
+
+  // CRÍTICO: todas las obras de un mismo gasto se escriben en UNA sola transacción.
+  // Antes se hacía una transacción por obra y Materiales podía observar estados parciales
+  // (obra 1, luego obra 1+2, etc.) y regrabar uno de esos estados mientras Caja seguía enviando.
+  // Con el lote atómico Materiales nunca ve el movimiento "a medias".
   var ref=f.doc(f.db,'materiales','data_planilla_exacta_v4');
   await f.runTransaction(f.db,async function(tx){
     var snap=await tx.get(ref);
     var data=snap.exists()?(snap.data()||{}):{};
     try{delete data.updatedAt;}catch(_e){}
-    var r=cqCgMatAplicarEvento(data,ev);
-    if(r.cambio){
-      r.data.updatedAt=new Date().toISOString();
-      r.data.updatedByIntegration=String(ev.integrationId||'');
-      tx.set(ref,r.data);
+    var cambio=false;
+    for(var i=0;i<eventos.length;i++){
+      var r=cqCgMatAplicarEvento(data,eventos[i]);
+      data=r.data;
+      if(r.cambio)cambio=true;
+    }
+    if(cambio){
+      data.updatedAt=new Date().toISOString();
+      data.updatedByIntegration=String(eventos[eventos.length-1].integrationId||'');
+      tx.set(ref,data);
     }
   });
   return true;
+}
+async function cqCgMaterializarDirecto(ev){
+  return cqCgMaterializarDirectoLote([ev]);
 }
 async function cqSyncMovimientoMateriales(mov,oldMov){
   var f=window._cqFirebase;
@@ -3998,18 +4013,23 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
   var ids=[];
   nuevas.concat(viejas).forEach(function(x){if(x&&x.obraId&&!ids.includes(x.obraId))ids.push(x.obraId);});
 
+  var payloads=[];
   for(var i=0;i<ids.length;i++){
     var id=ids[i],nueva=nuevas.find(function(x){return x.obraId===id;}),vieja=viejas.find(function(x){return x.obraId===id;});
     var base=nueva||vieja;
-    var payload=cqMaterialesPayloadCaja(mov,base,!!nueva);
+    payloads.push(cqMaterialesPayloadCaja(mov,base,!!nueva));
+  }
 
-    // 1) Fuente real: Materiales lee este documento principal.
-    // El punto verde sólo puede aparecer después de confirmar esta transacción.
-    await cqCgMaterializarDirecto(payload);
+  // 1) Fuente real: escribir TODAS las obras juntas en el documento principal.
+  // Así no existe una ventana donde Materiales pueda conservar sólo la primera obra.
+  await cqCgMaterializarDirectoLote(payloads);
 
-    // 2) Respaldo/auditoría. Si falla, no invalida la carga real ya confirmada.
+  // 2) Respaldo/auditoría. Se publica después de confirmar el lote real.
+  // Materiales actual ignora estos eventos de Caja Gerencia como fuente activa.
+  for(var j=0;j<payloads.length;j++){
+    var payload=payloads[j];
     try{
-      await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,id)),payload);
+      await f.setDoc(f.doc(f.db,'materiales_integraciones',payload.integrationId),payload);
     }catch(e){
       console.warn('Respaldo materiales_integraciones no disponible',e);
     }
@@ -4037,16 +4057,16 @@ async function cqEliminarVinculosMateriales(mov){
   if(!mov||!mov.materialesAgregar||!Array.isArray(mov.materialesCantidades)||!window._cqFirebase)return true;
   var f=window._cqFirebase;
   try{
-    for(var i=0;i<mov.materialesCantidades.length;i++){
-      var x=mov.materialesCantidades[i];
-      var payload=cqMaterialesPayloadCaja(mov,x,false);
+    var payloads=mov.materialesCantidades.map(function(x){return cqMaterialesPayloadCaja(mov,x,false);});
 
-      // Eliminar primero del documento real de Materiales.
-      await cqCgMaterializarDirecto(payload);
+    // Borrar todas las obras del movimiento en una sola transacción para evitar estados parciales.
+    await cqCgMaterializarDirectoLote(payloads);
 
-      // Mantener auditoría sin convertirla en requisito para la eliminación real.
+    // Mantener auditoría sin convertirla en requisito para la eliminación real.
+    for(var i=0;i<payloads.length;i++){
+      var payload=payloads[i];
       try{
-        await f.setDoc(f.doc(f.db,'materiales_integraciones',cqMaterialesIntegrationId(mov.id,x.obraId)),payload);
+        await f.setDoc(f.doc(f.db,'materiales_integraciones',payload.integrationId),payload);
       }catch(e){
         console.warn('Respaldo materiales_integraciones no disponible',e);
       }
