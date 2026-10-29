@@ -6675,5 +6675,354 @@ changeUser.addEventListener("click",async()=>{
 })();
 </script>
 
+
+<style id="cq-caja-panol-ui-v1">
+.cq-panol-caja-wrap{margin-bottom:11px}
+.cq-panol-caja-row{margin-bottom:0!important;border-color:#CFE5D8!important;background:linear-gradient(180deg,#fff,#F4FBF7)!important}
+.cq-panol-caja-row .cq-add-gastos-copy b{color:#176D4D!important}
+.cq-panol-caja-panel{display:none;margin-top:7px;padding:10px;border:1px solid #CFE5D8;border-radius:11px;background:#F7FCF9}
+.cq-panol-caja-panel.show{display:block}
+.cq-panol-mode-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#fff;border:1px solid #DDEBE2;margin-bottom:9px}
+.cq-panol-mode-row span{font-size:10.5px;font-weight:850;color:#315D4D}
+.cq-panol-mode-row small{display:block;font-size:8.5px;color:#789083;margin-top:2px;font-weight:700}
+.cq-panol-mode-row input{width:17px;height:17px;accent-color:#2E7D5E;flex:0 0 auto}
+.cq-panol-product-box{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px;border:1px solid #DDEBE2;border-radius:9px;background:#fff;margin-bottom:9px}
+.cq-panol-product-copy{min-width:0;flex:1}
+.cq-panol-product-copy b{display:block;font-size:10.5px;color:#1C3D35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cq-panol-product-copy small{display:block;font-size:8.5px;color:#789083;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cq-panol-product-btn{border:0;background:linear-gradient(135deg,#176D49,#2E9A6A);color:#fff;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer;white-space:nowrap}
+.cq-panol-caja-panel .fld{margin-bottom:7px}
+.cq-panol-price-preview{font-size:9px;color:#5E786A;font-weight:800;line-height:1.35;padding:7px 9px;border-radius:8px;background:#EEF7F1}
+.cq-panol-hint{font-size:8.5px;color:#71877B;line-height:1.35;margin-top:7px;font-weight:700}
+#modal-cq-panol-producto .modal{max-width:430px}
+#cq-panol-catalog-results{margin-top:6px;max-height:270px;overflow:auto;border:1px solid var(--sand3);border-radius:9px;background:#fff}
+.cq-panol-disabled-note{font-size:8.5px;color:#9A7740;font-weight:800;margin-top:5px;line-height:1.3}
+@media(max-width:480px){
+  .cq-panol-caja-panel{padding:8px}
+  .cq-panol-product-btn{font-size:8px;padding:6px 7px}
+}
+</style>
+
+
+<script id="cq-caja-panol-v1">
+(function(){
+  'use strict';
+  var cqPanolProducto={gd:null,gf:null};
+  var cqPanolModalPrefix=null;
+  var cqPanolPrevGastos={gd:true,gf:true};
+  var cqPanolVerificando=false;
+
+  function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');}
+  function panolActivo(prefix){var e=document.getElementById(prefix+'-agregar-panol');return !!(e&&e.checked);}
+  function panolSinPrecio(prefix){var e=document.getElementById(prefix+'-panol-sin-precio');return !!(e&&e.checked);}
+  function panolQty(prefix){return Number((document.getElementById(prefix+'-panol-qty')||{}).value)||0;}
+  function panolEntradaId(movId){return 'caja_gerencia_'+String(movId);}
+
+  function inyectar(prefix){
+    var box=document.getElementById(prefix+'-imputacion-box');
+    if(!box||document.getElementById(prefix+'-panol-wrap'))return;
+    var add=box.querySelector('.cq-add-gastos-row');
+    if(!add)return;
+    var wrap=document.createElement('div');
+    wrap.className='cq-panol-caja-wrap';wrap.id=prefix+'-panol-wrap';
+    wrap.innerHTML=''
+      +'<div class="cq-add-gastos-row cq-panol-caja-row">'
+      +'<div class="cq-add-gastos-copy"><b>📦 Enviar a Pañol</b><small>Ingresar esta compra como stock de Pañol</small></div>'
+      +'<label class="cq-switch" aria-label="Enviar a Pañol"><input type="checkbox" id="'+prefix+'-agregar-panol"><span class="cq-switch-slider"></span></label>'
+      +'</div>'
+      +'<div class="cq-panol-caja-panel" id="'+prefix+'-panol-panel">'
+      +'<label class="cq-panol-mode-row"><span>Ingresar al Pañol sin precio<small>Con precio: no va a Gastos ni Materiales. Sin precio: Gastos queda activo, igual que en Acopio.</small></span><input type="checkbox" id="'+prefix+'-panol-sin-precio"></label>'
+      +'<div class="cq-panol-product-box"><div class="cq-panol-product-copy"><b id="'+prefix+'-panol-prod-name">Ningún material seleccionado</b><small id="'+prefix+'-panol-prod-meta">Elegí un producto del catálogo de Materiales</small></div><button type="button" class="cq-panol-product-btn" id="'+prefix+'-panol-prod-btn">Elegir material</button></div>'
+      +'<div class="fld"><label>Cantidad que ingresa a Pañol</label><input type="number" min="0.01" step="0.01" id="'+prefix+'-panol-qty" placeholder="0"></div>'
+      +'<div class="cq-panol-price-preview" id="'+prefix+'-panol-price-preview">Precio: —</div>'
+      +'<div class="cq-panol-disabled-note" id="'+prefix+'-panol-gastos-note"></div>'
+      +'<div class="cq-panol-hint">El punto de Pañol en el historial queda verde sólo cuando el ingreso existe realmente en <b>panol/stock_v1</b>.</div>'
+      +'</div>';
+    add.insertAdjacentElement('afterend',wrap);
+    document.getElementById(prefix+'-agregar-panol').addEventListener('change',function(){cqCajaPanolToggle(prefix);});
+    document.getElementById(prefix+'-panol-sin-precio').addEventListener('change',function(){cqCajaPanolToggle(prefix);});
+    document.getElementById(prefix+'-panol-prod-btn').addEventListener('click',function(){cqCajaPanolAbrirProducto(prefix);});
+    document.getElementById(prefix+'-panol-qty').addEventListener('input',function(){cqCajaPanolPreview(prefix);});
+    var monto=document.getElementById(prefix+'-monto');if(monto)monto.addEventListener('input',function(){cqCajaPanolPreview(prefix);});
+  }
+
+  function inyectarModal(){
+    if(document.getElementById('modal-cq-panol-producto'))return;
+    var div=document.createElement('div');div.className='modal-bg';div.id='modal-cq-panol-producto';
+    div.innerHTML='<div class="modal"><div class="modal-hd"><span class="modal-ttl">Material para Pañol</span><button class="modal-x" type="button" id="cq-panol-modal-x">×</button></div><div class="mbody"><div class="fld"><label>Producto del catálogo de Materiales</label><input class="cq-cat-search" id="cq-panol-catalog-search" placeholder="Buscar producto, código o categoría..." autocomplete="off"><div id="cq-panol-catalog-results"></div><div class="cq-cat-selected" id="cq-panol-catalog-selected">Ningún producto seleccionado</div></div><div class="user-help">Se usa el mismo catálogo que Materiales, pero esta operación se guarda directamente como stock de Pañol.</div></div><div class="mfooter"><button class="btn btn-s btn-sm" type="button" id="cq-panol-cancel">Cancelar</button><button class="btn btn-p btn-sm" type="button" id="cq-panol-confirm">Confirmar</button></div></div>';
+    document.body.appendChild(div);
+    document.getElementById('cq-panol-modal-x').onclick=function(){closeModal('modal-cq-panol-producto');};
+    document.getElementById('cq-panol-cancel').onclick=function(){closeModal('modal-cq-panol-producto');};
+    document.getElementById('cq-panol-confirm').onclick=function(){closeModal('modal-cq-panol-producto');if(cqPanolModalPrefix)cqCajaPanolRenderProducto(cqPanolModalPrefix);};
+    document.getElementById('cq-panol-catalog-search').addEventListener('input',cqCajaPanolRenderCatalogo);
+  }
+
+  function cqCajaPanolRenderProducto(prefix){
+    var p=cqPanolProducto[prefix],n=document.getElementById(prefix+'-panol-prod-name'),m=document.getElementById(prefix+'-panol-prod-meta');
+    if(n)n.textContent=p?(p.name||'Material'):'Ningún material seleccionado';
+    if(m)m.textContent=p?((p.code?('Código '+p.code+' · '):'')+(p.category||'VARIOS')):'Elegí un producto del catálogo de Materiales';
+    cqCajaPanolPreview(prefix);
+  }
+  window.cqCajaPanolRenderProducto=cqCajaPanolRenderProducto;
+
+  async function cqCajaPanolAbrirProducto(prefix){
+    cqPanolModalPrefix=prefix;
+    try{await cqLoadCatalogoMateriales();}catch(e){console.warn(e);}
+    var s=document.getElementById('cq-panol-catalog-search');if(s)s.value='';
+    cqCajaPanolRenderCatalogo();
+    var sel=document.getElementById('cq-panol-catalog-selected'),p=cqPanolProducto[prefix];if(sel)sel.textContent=p?('✓ '+p.name+(p.code?' · '+p.code:'')):'Ningún producto seleccionado';
+    openModal('modal-cq-panol-producto');
+    setTimeout(function(){if(s)s.focus();},50);
+  }
+  window.cqCajaPanolAbrirProducto=cqCajaPanolAbrirProducto;
+
+  function cqCajaPanolRenderCatalogo(){
+    var box=document.getElementById('cq-panol-catalog-results');if(!box)return;
+    var q=norm((document.getElementById('cq-panol-catalog-search')||{}).value||'');
+    var arr=(Array.isArray(CQ_CATALOGO_MATERIALES)?CQ_CATALOGO_MATERIALES:[]).filter(function(x){return !q||[x.name,x.code,x.category].some(function(v){return norm(v).indexOf(q)>=0;});}).slice(0,120);
+    box.innerHTML=arr.length?arr.map(function(x){return '<div class="cq-cat-item" data-id="'+escapeHTML(x.id)+'"><b>'+escapeHTML(x.name)+'</b><small>'+(x.code?('Código '+escapeHTML(x.code)+' · '):'')+escapeHTML(x.category||'')+'</small></div>';}).join(''):'<div class="combo-empty">Sin resultados</div>';
+    box.querySelectorAll('.cq-cat-item').forEach(function(el){el.onclick=function(){
+      var p=(Array.isArray(CQ_CATALOGO_MATERIALES)?CQ_CATALOGO_MATERIALES:[]).find(function(x){return String(x.id)===String(el.dataset.id);})||null;
+      cqPanolProducto[cqPanolModalPrefix]=p;
+      var sel=document.getElementById('cq-panol-catalog-selected');if(sel)sel.textContent=p?('✓ '+p.name+(p.code?' · '+p.code:'')):'Ningún producto seleccionado';
+      box.style.display='none';var s=document.getElementById('cq-panol-catalog-search');if(s)s.value=p?p.name:'';
+    };});
+    box.style.display='block';
+  }
+  window.cqCajaPanolRenderCatalogo=cqCajaPanolRenderCatalogo;
+
+  function cqCajaPanolPreview(prefix){
+    var el=document.getElementById(prefix+'-panol-price-preview');if(!el)return;
+    var qty=panolQty(prefix),monto=Number((document.getElementById(prefix+'-monto')||{}).value)||0;
+    if(panolSinPrecio(prefix)){el.textContent='Precio en Pañol: $0 · el costo se registra ahora en Gastos.';return;}
+    var pu=qty>0?monto/qty:0;
+    el.textContent=qty>0&&monto>0?('Precio unitario en Pañol: '+fmtP(pu)+' · total '+fmtP(monto)):'Precio unitario: se calcula como monto ÷ cantidad.';
+  }
+  window.cqCajaPanolPreview=cqCajaPanolPreview;
+
+  function seleccionarAcopioSiExiste(prefix){
+    try{
+      var obras=cqImputacionObras(),o=obras.find(function(x){return [x.id,x.label,x.short].some(function(v){return norm(v)==='acopio';});});
+      if(!o)return;
+      cqImpSel[prefix]=[String(o.id)];
+      cqRenderObrasDesdeGastos(prefix,null);
+      var rub=document.getElementById(prefix+'-rubro');
+      if(rub&&Array.from(rub.options||[]).some(function(op){return op.value==='mat';})){rub.value='mat';cqImpCargarSubrubros(prefix,'');}
+    }catch(e){console.warn('No se pudo seleccionar obra Acopio automáticamente',e);}
+  }
+
+  function cqCajaPanolToggle(prefix){
+    var activo=panolActivo(prefix),sin=panolSinPrecio(prefix),panel=document.getElementById(prefix+'-panol-panel'),gas=document.getElementById(prefix+'-agregar-gastos'),note=document.getElementById(prefix+'-panol-gastos-note');
+    if(panel)panel.classList.toggle('show',activo);
+    if(!gas)return;
+    if(activo){
+      if(typeof cqPanolPrevGastos[prefix]!=='boolean')cqPanolPrevGastos[prefix]=!!gas.checked;
+      // Pañol nunca impacta directamente Materiales desde Caja.
+      if(cqMaterialesDraft)cqMaterialesDraft[prefix]=[];
+      if(cqMaterialProducto)cqMaterialProducto[prefix]=null;
+      if(sin){
+        gas.disabled=false;gas.checked=true;
+        seleccionarAcopioSiExiste(prefix);
+        if(note)note.textContent='Sin precio: Gastos queda activo ahora; Pañol no generará Gastos al consumir ese lote.';
+      }else{
+        gas.checked=false;gas.disabled=true;
+        if(note)note.textContent='Con precio: no se agrega a Gastos ni a Materiales. El costo viajará con el stock de Pañol.';
+      }
+    }else{
+      gas.disabled=false;
+      gas.checked=cqPanolPrevGastos[prefix]!==false;
+      if(note)note.textContent='';
+    }
+    if(typeof _cqImpToggleAgregarBase==='function')_cqImpToggleAgregarBase(prefix);
+    if(typeof cqActualizarBotonMateriales==='function')cqActualizarBotonMateriales(prefix);
+    cqCajaPanolRenderProducto(prefix);cqCajaPanolPreview(prefix);
+  }
+  window.cqCajaPanolToggle=cqCajaPanolToggle;
+
+  // Insertar UI antes de envolver las funciones existentes.
+  inyectar('gd');inyectar('gf');inyectarModal();
+
+  var _cqImpToggleAgregarBase=window.cqImpToggleAgregar;
+  if(typeof _cqImpToggleAgregarBase==='function'){
+    window.cqImpToggleAgregar=function(prefix){
+      _cqImpToggleAgregarBase(prefix);
+      if(panolActivo(prefix)){
+        var gas=document.getElementById(prefix+'-agregar-gastos');
+        if(gas&&(!panolSinPrecio(prefix))){gas.checked=false;gas.disabled=true;_cqImpToggleAgregarBase(prefix);}
+      }
+      var ccRow=document.getElementById('gf-caja-chica-row');
+      if(prefix==='gf'&&ccRow&&panolActivo(prefix))ccRow.classList.remove('show');
+    };
+  }
+
+  var _cqActualizarBotonMaterialesBase=window.cqActualizarBotonMateriales;
+  if(typeof _cqActualizarBotonMaterialesBase==='function'){
+    window.cqActualizarBotonMateriales=function(prefix){
+      _cqActualizarBotonMaterialesBase(prefix);
+      if(panolActivo(prefix)){
+        var b=document.getElementById(prefix+'-materiales-action');if(b)b.classList.remove('show');
+        if(cqMaterialesDraft)cqMaterialesDraft[prefix]=[];
+        if(cqMaterialProducto)cqMaterialProducto[prefix]=null;
+      }
+    };
+  }
+
+  var _cqImpInitBase=window.cqImpInit;
+  if(typeof _cqImpInitBase==='function'){
+    window.cqImpInit=function(prefix,data){
+      var pan=document.getElementById(prefix+'-agregar-panol'),sin=document.getElementById(prefix+'-panol-sin-precio'),qty=document.getElementById(prefix+'-panol-qty');
+      if(pan)pan.checked=!!(data&&data.panolAgregar);
+      if(sin)sin.checked=!!(data&&data.panolSinPrecio);
+      cqPanolProducto[prefix]=data&&data.panolProducto?Object.assign({},data.panolProducto):null;
+      if(qty)qty.value=(data&&Number(data.panolCantidad)>0)?data.panolCantidad:'';
+      cqPanolPrevGastos[prefix]=!(data&&data.imputacionPendienteGastos===false);
+      _cqImpInitBase(prefix,data);
+      cqCajaPanolToggle(prefix);
+    };
+  }
+
+  var _cqImpReadBase=window.cqImpRead;
+  if(typeof _cqImpReadBase==='function'){
+    window.cqImpRead=function(prefix){
+      if(panolActivo(prefix))cqCajaPanolToggle(prefix);
+      var out=_cqImpReadBase(prefix);if(out&&out.error)return out;
+      out=out||{};
+      if(panolActivo(prefix)){
+        var p=cqPanolProducto[prefix],qty=panolQty(prefix),sin=panolSinPrecio(prefix);
+        if(!p)return {error:'Elegí el material que va a ingresar a Pañol.'};
+        if(!(qty>0))return {error:'Ingresá la cantidad que va a ingresar a Pañol.'};
+        out.panolAgregar=true;out.panolSinPrecio=sin;out.panolCantidad=qty;
+        out.panolProducto={id:p.id,name:p.name,code:p.code||'',category:p.category||'VARIOS'};
+        out.panolSyncEstado='pendiente';out.panolSyncError='';
+        // Pañol y Materiales siempre son excluyentes.
+        out.materialesAgregar=false;out.materialesCantidades=[];out.materialesProducto=null;out.materialesSyncEstado='no';out.materialesSyncError='No se agregó a Materiales porque se envió a Pañol';
+        // Con precio, igual que Acopio: el costo queda en el lote y no se manda a Gastos ahora.
+        if(!sin){out.imputaciones=[];out.imputacionRubro='';out.imputacionRubroLabel='';out.imputacionSubrubro='';out.imputacionSubrubroLabel='';out.imputacionPendienteGastos=false;out.gastosSyncEstado='no';out.gastosSyncError='No se agregó a Gastos porque el costo quedó en Pañol';}
+      }else{
+        out.panolAgregar=false;out.panolSinPrecio=false;out.panolCantidad=0;out.panolProducto=null;out.panolSyncEstado='no';out.panolSyncError='No se agregó a Pañol';
+      }
+      return out;
+    };
+  }
+
+  var _tituloBase=window.cqCajaTituloMovimiento;
+  if(typeof _tituloBase==='function')window.cqCajaTituloMovimiento=function(mov,fallback){if(mov&&mov.panolAgregar&&mov.panolProducto&&mov.panolProducto.name)return mov.panolProducto.name;return _tituloBase(mov,fallback);};
+  var _detalleBase=window.cqCajaDetalleImputacion;
+  if(typeof _detalleBase==='function')window.cqCajaDetalleImputacion=function(mov){var h=_detalleBase(mov)||'';if(mov&&mov.panolAgregar){var p=mov.panolProducto||{},t='📦 Pañol · '+(mov.panolSinPrecio?'sin precio':'con precio')+(mov.panolCantidad?(' · '+mov.panolCantidad+' u'):'');var extra='<div class="gasto-imputacion-meta">'+escapeHTML(t)+(p.category?'<br>'+escapeHTML(p.category):'')+'</div>';return h+extra;}return h;};
+
+  function dotPanol(mov){
+    if(!mov||!mov.panolAgregar)return '';
+    var st=String(mov.panolSyncEstado||'pendiente'),ok=st==='ok',title=ok?'Sincronizado con Pañol':(st==='pendiente'?'Pañol pendiente de confirmación':(mov.panolSyncError||'No se pudo sincronizar con Pañol'));
+    return '<span class="cq-gastos-sync-dot '+(ok?'ok':'')+'" title="'+escapeHTML(title)+'"></span>';
+  }
+  var _dualBase=window.cqDualSyncHTML;
+  if(typeof _dualBase==='function')window.cqDualSyncHTML=function(mov){
+    if(!(mov&&mov.panolAgregar))return _dualBase(mov)||'';
+    var p=dotPanol(mov),html='<span class="cq-sync-pair">';
+    // Con precio: Gastos y Materiales están omitidos a propósito, mostrar sólo Pañol.
+    // Sin precio: Gastos se registra ahora, Materiales sigue omitido; mostrar Gastos + Pañol.
+    if(mov.panolSinPrecio){var g=cqSyncDotHTML(mov);html+='<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Gastos</span>'+g+'</span>';}
+    html+='<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Pañol</span>'+p+'</span></span>';
+    return html;
+  };
+
+  async function limpiarMaterialesSalidaPanol(mov){
+    var f=window._cqFirebase;if(!f||!mov||!mov.id)return true;
+    var ref=f.doc(f.db,'materiales_integraciones','panol_'+String(mov.id));
+    try{var s=await f.getDoc(ref);if(!s.exists())return true;var d=s.data()||{};d.active=false;d.updatedAt=new Date().toISOString();d.cascadeDeletedFrom='caja_gerencia';await f.setDoc(ref,d);return true;}catch(e){throw new Error('Materiales (salida de Pañol): '+String(e&&e.message||e));}
+  }
+  async function limpiarGastoSalidaPanol(mov){
+    var f=window._cqFirebase;if(!f||!mov||!mov.id)return true;var obra=String(mov.gastosObraId||'').trim();if(!obra)return true;
+    var ref=f.doc(f.db,'gastos',obra),gid='panol_'+String(mov.id);
+    await f.runTransaction(f.db,async function(tx){var s=await tx.get(ref);if(!s.exists())return;var d=s.data()||{},a=Array.isArray(d.gastos)?d.gastos.slice():[];d.gastos=a.filter(function(g){return String(g&&g.id||'')!==gid&&String(g&&g.panolMovimientoId||'')!==String(mov.id);});d.updatedAt=new Date().toISOString();tx.set(ref,d);});return true;
+  }
+
+  async function borrarEntradaPanolCaja(mov){
+    if(!mov||!mov.id||!window._cqFirebase)return true;
+    var f=window._cqFirebase,ref=f.doc(f.db,'panol','stock_v1'),eid=panolEntradaId(mov.id);
+    var s0=await f.getDoc(ref);if(!s0.exists())return true;var d0=s0.data()||{},movs0=Array.isArray(d0.movimientos)?d0.movimientos:[];
+    var entradas=movs0.filter(function(x){return x&&x.tipo==='entrada'&&(String(x.cajaGerenciaEntradaId||'')===eid||String(x.cajaMovimientoId||'')===String(mov.id));});
+    var ids=[];entradas.forEach(function(x){(x.detalle||[]).forEach(function(dd){if(dd&&dd.loteId&&ids.indexOf(String(dd.loteId))<0)ids.push(String(dd.loteId));});});
+    (Array.isArray(d0.lotes)?d0.lotes:[]).forEach(function(l){if(l&&String(l.cajaMovimientoId||'')===String(mov.id)&&ids.indexOf(String(l.id))<0)ids.push(String(l.id));});
+    var salidas=movs0.filter(function(x){return x&&x.tipo==='salida'&&(x.detalle||[]).some(function(dd){return dd&&ids.indexOf(String(dd.loteId))>=0;});});
+    for(var i=0;i<salidas.length;i++){await limpiarMaterialesSalidaPanol(salidas[i]);await limpiarGastoSalidaPanol(salidas[i]);}
+    await f.runTransaction(f.db,async function(tx){
+      var s=await tx.get(ref);if(!s.exists())return;var d=s.data()||{},productos=Array.isArray(d.productos)?d.productos.slice():[],lotes=Array.isArray(d.lotes)?d.lotes.slice():[],movs=Array.isArray(d.movimientos)?d.movimientos.slice():[];
+      var ent=movs.filter(function(x){return x&&x.tipo==='entrada'&&(String(x.cajaGerenciaEntradaId||'')===eid||String(x.cajaMovimientoId||'')===String(mov.id));}),lids=[];
+      ent.forEach(function(x){(x.detalle||[]).forEach(function(dd){if(dd&&dd.loteId&&lids.indexOf(String(dd.loteId))<0)lids.push(String(dd.loteId));});});
+      lotes.forEach(function(l){if(l&&String(l.cajaMovimientoId||'')===String(mov.id)&&lids.indexOf(String(l.id))<0)lids.push(String(l.id));});
+      var salidaIds=[];movs.forEach(function(x){if(x&&x.tipo==='salida'&&(x.detalle||[]).some(function(dd){return dd&&lids.indexOf(String(dd.loteId))>=0;})){salidaIds.push(String(x.id));(x.detalle||[]).forEach(function(dd){if(!dd||lids.indexOf(String(dd.loteId))>=0)return;var lot=lotes.find(function(ll){return String(ll&&ll.id||'')===String(dd.loteId);});if(lot)lot.cantidad=parseFloat(((Number(lot.cantidad)||0)+(Number(dd.cantidad)||0)).toFixed(6));});}});
+      movs=movs.filter(function(x){if(!x)return false;var entrada=x.tipo==='entrada'&&(String(x.cajaGerenciaEntradaId||'')===eid||String(x.cajaMovimientoId||'')===String(mov.id));var salida=x.tipo==='salida'&&salidaIds.indexOf(String(x.id))>=0;return !(entrada||salida);});
+      lotes=lotes.filter(function(l){return lids.indexOf(String(l&&l.id||''))<0;});
+      var prodIds=[];ent.forEach(function(x){if(x&&x.prodId)prodIds.push(String(x.prodId));});
+      productos=productos.filter(function(p){var pid=String(p&&p.id||'');if(prodIds.indexOf(pid)<0)return true;return lotes.some(function(l){return String(l&&l.prodId||'')===pid;})||movs.some(function(mm){return String(mm&&mm.prodId||'')===pid;});});
+      d.productos=productos;d.lotes=lotes;d.movimientos=movs;d.updatedAt=new Date().toISOString();tx.set(ref,d);
+    });
+    return true;
+  }
+
+  async function upsertEntradaPanolCaja(mov){
+    if(!mov||!mov.panolAgregar)throw new Error('Movimiento sin destino Pañol');
+    var p=mov.panolProducto||{},qty=Number(mov.panolCantidad)||0;if(!(qty>0))throw new Error('Cantidad inválida para Pañol');if(!p.name)throw new Error('Material de Pañol no definido');
+    var sin=mov.panolSinPrecio===true,precio=sin?0:(Number(mov.monto)||0)/qty;if(!sin&&!(precio>0))throw new Error('No se pudo calcular el precio unitario para Pañol');
+    var tc=precio>0?(Number(mov.tc)||Number(getLastTC())||0):null;if(!(tc>0))tc=null;
+    var f=window._cqFirebase,ref=f.doc(f.db,'panol','stock_v1'),eid=panolEntradaId(mov.id),rubro=String(p.category||'VARIOS').trim()||'VARIOS',codigo=String(p.code||'').trim(),nombre=String(p.name||'').trim();
+    await f.runTransaction(f.db,async function(tx){
+      var s=await tx.get(ref);var d=s.exists()?(s.data()||{}):{productos:[],lotes:[],movimientos:[],obras:[],rubros:[]};
+      var productos=Array.isArray(d.productos)?d.productos.slice():[],lotes=Array.isArray(d.lotes)?d.lotes.slice():[],movs=Array.isArray(d.movimientos)?d.movimientos.slice():[];
+      var prev=movs.filter(function(x){return x&&x.tipo==='entrada'&&(String(x.cajaGerenciaEntradaId||'')===eid||String(x.cajaMovimientoId||'')===String(mov.id));});var prevIds=[];prev.forEach(function(x){(x.detalle||[]).forEach(function(dd){if(dd&&dd.loteId)prevIds.push(String(dd.loteId));});});
+      if(prevIds.length&&movs.some(function(x){return x&&x.tipo==='salida'&&(x.detalle||[]).some(function(dd){return dd&&prevIds.indexOf(String(dd.loteId))>=0;});}))throw new Error('Este ingreso de Pañol ya tuvo consumos. Eliminá el movimiento completo para rehacerlo.');
+      movs=movs.filter(function(x){return !(x&&x.tipo==='entrada'&&(String(x.cajaGerenciaEntradaId||'')===eid||String(x.cajaMovimientoId||'')===String(mov.id)));});if(prevIds.length)lotes=lotes.filter(function(l){return prevIds.indexOf(String(l&&l.id||''))<0;});
+      var prod=null;if(codigo)prod=productos.find(function(x){return String(x&&x.codigo||'').trim().toLowerCase()===codigo.toLowerCase();})||null;if(!prod){var nk=norm(nombre);prod=productos.find(function(x){return norm(x&&x.nombre||'')===nk;})||null;}
+      if(!prod){prod={id:eid+'_prod',rubro:rubro,codigo:codigo,nombre:nombre};productos.push(prod);}else{prod.rubro=rubro||prod.rubro;if(codigo)prod.codigo=codigo;if(nombre)prod.nombre=nombre;}
+      if(!Array.isArray(d.rubros))d.rubros=[];if(rubro&&!d.rubros.some(function(x){return String(x).toLowerCase()===rubro.toLowerCase();}))d.rubros.push(rubro);
+      var lid=eid+'_lote';
+      lotes.push({id:lid,prodId:prod.id,cantidad:qty,cantidadOriginal:qty,precio:precio,tipoCambio:tc,fechaTs:Date.parse(mov.fecha||'')||Date.now(),origen:'cq_caja_gerencia',cajaGerenciaEntradaId:eid,cajaMovimientoId:String(mov.id)});
+      movs.push({id:eid+'_mov',ts:Date.now(),tipo:'entrada',prodId:prod.id,cantidad:qty,precio:precio,tipoCambio:tc,usd:(tc&&precio>0)?(qty*precio/tc):null,usuario:window.CURRENT_USER||'Caja Gerencia',detalle:[{loteId:lid,cantidad:qty,precio:precio,tipoCambio:tc}],origen:'cq_caja_gerencia',cajaGerenciaEntradaId:eid,cajaMovimientoId:String(mov.id),materialCode:codigo,materialName:nombre,comentario:String(mov.imputacionComentario||mov.desc||'')});
+      d.productos=productos;d.lotes=lotes;d.movimientos=movs;d.updatedAt=new Date().toISOString();tx.set(ref,d);
+    });
+    // Confirmación real antes de poner verde.
+    var check=await f.getDoc(ref),ok=false;if(check.exists())ok=(Array.isArray((check.data()||{}).movimientos)?check.data().movimientos:[]).some(function(x){return x&&x.tipo==='entrada'&&String(x.cajaGerenciaEntradaId||'')===eid;});if(!ok)throw new Error('Firebase no confirmó el ingreso dentro de Pañol');
+    return true;
+  }
+
+  async function syncPanol(mov,oldMov){
+    if(!window._cqFirebase)throw new Error('Firebase no disponible');
+    if(oldMov&&oldMov.panolAgregar&&!mov.panolAgregar)await borrarEntradaPanolCaja(oldMov);
+    if(mov.panolAgregar)await upsertEntradaPanolCaja(mov);
+    mov.panolSyncEstado=mov.panolAgregar?'ok':'no';mov.panolSyncError=mov.panolAgregar?'':'No se agregó a Pañol';mov.panolSyncAt=new Date().toISOString();persist();renderCurrent();
+    setTimeout(verificarPanol,500);return true;
+  }
+  function lanzarPanol(mov,oldMov){
+    if(!mov)return;if(mov.panolAgregar){mov.panolSyncEstado='pendiente';mov.panolSyncError='';persist();renderCurrent();}
+    syncPanol(mov,oldMov).catch(function(e){console.warn('Caja → Pañol',e);mov.panolSyncEstado='error';mov.panolSyncError=String(e&&e.message||e);mov.panolSyncAt=new Date().toISOString();persist();renderCurrent();toast('No se pudo sincronizar con Pañol');});
+  }
+
+  var _lanzarMaterialesBase=window.cqLanzarSyncMaterialesCaja;
+  if(typeof _lanzarMaterialesBase==='function')window.cqLanzarSyncMaterialesCaja=function(mov,oldMov){_lanzarMaterialesBase(mov,oldMov);lanzarPanol(mov,oldMov);};
+
+  async function eliminarPanol(mov){
+    if(!mov||!mov.panolAgregar)return true;
+    try{await borrarEntradaPanolCaja(mov);mov.panolSyncEstado='no';mov.panolSyncError='';return true;}catch(e){console.warn('No se pudo eliminar vínculo con Pañol',e);toast('No se pudo eliminar el vínculo en Pañol.');return false;}
+  }
+  var _eliminarMaterialesBase=window.cqEliminarVinculosMateriales;
+  if(typeof _eliminarMaterialesBase==='function')window.cqEliminarVinculosMateriales=async function(mov){var ok=await _eliminarMaterialesBase(mov);if(!ok)return false;return await eliminarPanol(mov);};
+
+  async function verificarPanol(){
+    if(cqPanolVerificando||!window._cqFirebase||typeof cqMovimientosCajaPesos!=='function')return;cqPanolVerificando=true;
+    try{
+      var f=window._cqFirebase,s=await f.getDoc(f.doc(f.db,'panol','stock_v1')),presentes=new Set();
+      if(s.exists())(Array.isArray((s.data()||{}).movimientos)?s.data().movimientos:[]).forEach(function(x){if(x&&x.tipo==='entrada'&&x.cajaGerenciaEntradaId)presentes.add(String(x.cajaGerenciaEntradaId));});
+      var cambio=false;(cqMovimientosCajaPesos()||[]).forEach(function(m){if(!m||!m.panolAgregar)return;var ok=presentes.has(panolEntradaId(m.id)),st=ok?'ok':'error',err=ok?'':'No se encontró el ingreso correspondiente en Pañol';if(m.panolSyncEstado!==st||m.panolSyncError!==err){m.panolSyncEstado=st;m.panolSyncError=err;m.panolSyncAt=new Date().toISOString();cambio=true;}});
+      if(cambio){persist();renderCurrent();}
+    }catch(e){console.warn('Verificación Caja ↔ Pañol',e);}finally{cqPanolVerificando=false;}
+  }
+  window.cqVerificarSincronizacionesPanolCaja=verificarPanol;
+  window.addEventListener('focus',function(){setTimeout(verificarPanol,550);});
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(verificarPanol,550);});
+  setTimeout(verificarPanol,2100);
+})();
+</script>
+
 </body>
 </html>
