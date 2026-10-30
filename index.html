@@ -2442,13 +2442,43 @@ function sanitizeDB(s){
   }
   return base;
 }
+
+// CQ 30/10/2026 — snapshot REAL, sin referencias compartidas.
+// Caja usa documentos completos y rebase multiusuario. DB y la última base remota
+// NUNCA pueden compartir arrays/objetos: si comparten referencias, una carga local
+// modifica también la supuesta base confirmada y el rebase puede descartar esa carga.
+function cqCajaSnapshotDB(s){
+  try{
+    return sanitizeDB(JSON.parse(JSON.stringify(s||emptyDB())));
+  }catch(e){
+    console.warn('Caja: no se pudo clonar snapshot; se usa copia sanitizada de emergencia',e);
+    return sanitizeDB(s||emptyDB());
+  }
+}
+function cqCajaMovimientoActualPorId(id){
+  var sid=String(id==null?'':id);
+  if(!sid)return null;
+  var keys=['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'];
+  for(var i=0;i<keys.length;i++){
+    var arr=Array.isArray(DB[keys[i]])?DB[keys[i]]:[];
+    var m=arr.find(function(x){return String(x&&x.id)===sid;});
+    if(m)return m;
+  }
+  return null;
+}
+function cqCajaPatchMovimientoActual(id,patch){
+  var actual=cqCajaMovimientoActualPorId(id);
+  if(!actual)return null;
+  Object.keys(patch||{}).forEach(function(k){actual[k]=patch[k];});
+  return actual;
+}
 // Aplica sobre la última Caja remota únicamente los cambios hechos localmente desde la última base confirmada.
 // Esto permite convivir con otro dispositivo sin reemplazar toda la Caja ni perder altas/modificaciones/bajas locales.
 function cqCajaRebaseLocalSobreRemoto(baseAnterior,localActual,remotoActual){
-  var base=sanitizeDB(baseAnterior||emptyDB());
-  var loc=sanitizeDB(localActual||emptyDB());
-  var rem=sanitizeDB(remotoActual||emptyDB());
-  var out=sanitizeDB(rem);
+  var base=cqCajaSnapshotDB(baseAnterior||emptyDB());
+  var loc=cqCajaSnapshotDB(localActual||emptyDB());
+  var rem=cqCajaSnapshotDB(remotoActual||emptyDB());
+  var out=cqCajaSnapshotDB(rem);
   var arrays=['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'];
   arrays.forEach(function(k){
     var b=Array.isArray(base[k])?base[k]:[];
@@ -2559,7 +2589,10 @@ async function saveToFirebase(){
   clearTimeout(saveTimer);
   firebaseSavePromise=(async function(){
     var snapshotRevision=cqCajaLocalRevision;
-    var localSnapshot=sanitizeDB(DB);
+    // Foto inmutable: una carga posterior NO puede entrar por referencia dentro de este guardado.
+    var localSnapshot=cqCajaSnapshotDB(DB);
+    // Base exacta sobre la que nació localSnapshot. También aislada de DB.
+    var baseSnapshot=cqCajaSnapshotDB(cqCajaLastRemoteDB||localSnapshot);
     var activitySnapshot=pendingActivity||null;
     var savedPayload=null;
     var guardarSiguiente=false;
@@ -2572,23 +2605,24 @@ async function saveToFirebase(){
         var snap=await tx.get(ref);
         var remote=snap.exists()?(snap.data()||{}):{};
         if(!remote.db)throw new Error('CAJA_REMOTA_INVALIDA');
-        var remoteDB=sanitizeDB(remote.db);
+        var remoteDB=cqCajaSnapshotDB(remote.db);
         var remoteRevision=Number(remote.revision)||0;
-        var merged=localSnapshot;
+        var merged=cqCajaSnapshotDB(localSnapshot);
         // Si otro dispositivo cambió Caja desde nuestra última base, rebasar únicamente nuestros cambios.
         // Desde esta versión se usa una revisión monotónica de Firestore; updatedAt queda como fallback para documentos viejos.
         var remotoCambio=lastRemoteRevision>0
           ? remoteRevision!==lastRemoteRevision
           : !!(lastRemoteUpdatedAt&&remote.updatedAt&&remote.updatedAt!==lastRemoteUpdatedAt);
         if(remotoCambio){
-          merged=cqCajaRebaseLocalSobreRemoto(cqCajaLastRemoteDB||remoteDB,localSnapshot,remoteDB);
+          merged=cqCajaRebaseLocalSobreRemoto(baseSnapshot,localSnapshot,remoteDB);
         }
-        savedPayload={db:merged,updatedAt:new Date().toISOString(),revision:remoteRevision+1,lastActivity:activitySnapshot};
+        savedPayload={db:cqCajaSnapshotDB(merged),updatedAt:new Date().toISOString(),revision:remoteRevision+1,lastActivity:activitySnapshot};
         tx.set(ref,savedPayload);
       });
 
-      var confirmado=sanitizeDB(savedPayload.db);
-      cqCajaLastRemoteDB=confirmado;
+      var confirmado=cqCajaSnapshotDB(savedPayload.db);
+      // La base remota confirmada debe ser otra copia independiente de DB.
+      cqCajaLastRemoteDB=cqCajaSnapshotDB(confirmado);
       lastRemoteUpdatedAt=savedPayload.updatedAt;
       lastRemoteRevision=Number(savedPayload.revision)||lastRemoteRevision;
       suppressRemoteUntil=Date.now()+250;
@@ -2596,13 +2630,13 @@ async function saveToFirebase(){
       if(cqCajaLocalRevision!==snapshotRevision){
         // Hubo una carga/modificación/baja mientras Firebase estaba guardando.
         // Conservarla sobre la versión recién confirmada; NO reemplazar DB por la foto vieja.
-        DB=cqCajaRebaseLocalSobreRemoto(localSnapshot,sanitizeDB(DB),confirmado);
+        DB=cqCajaRebaseLocalSobreRemoto(localSnapshot,cqCajaSnapshotDB(DB),confirmado);
         cqCajaLocalDirty=true;
         guardarSiguiente=true;
         localStorage.setItem(DB_KEY,JSON.stringify(DB));
         setSyncStatus('Sync: pendiente');
       }else{
-        DB=confirmado;
+        DB=cqCajaSnapshotDB(confirmado);
         cqCajaLocalDirty=false;
         localStorage.setItem(DB_KEY,JSON.stringify(DB));
         pendingActivity=null;
@@ -2715,8 +2749,8 @@ async function loadFromFirebase(){
     }
 
     // Firebase es la fuente autoritativa al abrir.
-    DB=sanitizeDB(snap.data().db);
-    cqCajaLastRemoteDB=sanitizeDB(snap.data().db);
+    DB=cqCajaSnapshotDB(snap.data().db);
+    cqCajaLastRemoteDB=cqCajaSnapshotDB(snap.data().db);
     cqCajaLocalDirty=false;
     cqCajaDeferredRemote=null;
     lastRemoteUpdatedAt=snap.data().updatedAt||null;
@@ -2761,8 +2795,8 @@ function cqAplicarRemotoDiferidoSiSeguro(){
   var isNew=dataRevision>0&&lastRemoteRevision>0
     ? dataRevision>lastRemoteRevision
     : !!(lastRemoteUpdatedAt&&data.updatedAt&&data.updatedAt!==lastRemoteUpdatedAt);
-  DB=sanitizeDB(data.db);
-  cqCajaLastRemoteDB=sanitizeDB(data.db);
+  DB=cqCajaSnapshotDB(data.db);
+  cqCajaLastRemoteDB=cqCajaSnapshotDB(data.db);
   lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
   if(dataRevision>0)lastRemoteRevision=dataRevision;
   localStorage.setItem(DB_KEY,JSON.stringify(DB));
@@ -2794,8 +2828,8 @@ function listenFirebase(){
     var isNew=dataRevision>0&&lastRemoteRevision>0
       ? dataRevision>lastRemoteRevision
       : !!(lastRemoteUpdatedAt && data.updatedAt && data.updatedAt!==lastRemoteUpdatedAt);
-    DB=sanitizeDB(data.db);
-    cqCajaLastRemoteDB=sanitizeDB(data.db);
+    DB=cqCajaSnapshotDB(data.db);
+    cqCajaLastRemoteDB=cqCajaSnapshotDB(data.db);
     lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
     if(dataRevision>0)lastRemoteRevision=dataRevision;
     localStorage.setItem(DB_KEY,JSON.stringify(DB));
@@ -4035,21 +4069,26 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
     }
   }
 
-  mov.materialesSyncEstado=nuevas.length?'ok':'no';
-  mov.materialesSyncError=nuevas.length?'':'No se agregó a Materiales';
-  mov.materialesSyncAt=new Date().toISOString();
-  persist();renderCurrent();
+  var matEstado=nuevas.length?'ok':'no';
+  var matError=nuevas.length?'':'No se agregó a Materiales';
+  var matAt=new Date().toISOString();
+  mov.materialesSyncEstado=matEstado;mov.materialesSyncError=matError;mov.materialesSyncAt=matAt;
+  var movActualMat=cqCajaPatchMovimientoActual(mov.id,{materialesSyncEstado:matEstado,materialesSyncError:matError,materialesSyncAt:matAt});
+  if(movActualMat){persist();renderCurrent();}
   setTimeout(cqVerificarSincronizacionesMateriales,350);
 }
 function cqLanzarSyncMaterialesCaja(mov,oldMov){
   if(!mov)return;
+  var actual=cqCajaMovimientoActualPorId(mov.id);
+  if(!actual){console.warn('Caja → Materiales cancelado: el movimiento ya no existe en Caja',mov.id);return;}
+  mov=actual;
   if(mov.materialesAgregar)mov.materialesSyncEstado='pendiente';
   cqSyncMovimientoMateriales(mov,oldMov).catch(function(e){
     console.warn('Caja → Materiales',e);
-    mov.materialesSyncEstado='error';
-    mov.materialesSyncError=String(e&&e.message||e);
-    mov.materialesSyncAt=new Date().toISOString();
-    persist();renderCurrent();
+    var err=String(e&&e.message||e),at=new Date().toISOString();
+    mov.materialesSyncEstado='error';mov.materialesSyncError=err;mov.materialesSyncAt=at;
+    var vigente=cqCajaPatchMovimientoActual(mov.id,{materialesSyncEstado:'error',materialesSyncError:err,materialesSyncAt:at});
+    if(vigente){persist();renderCurrent();}
     toast('No se pudo sincronizar con Materiales');
   });
 }
@@ -4477,22 +4516,37 @@ async function cqSyncMovimientoGastos(mov,contexto,oldMov){
     var base=nueva||viejas.find(function(x){return x.obraId===obraId;})||{obraId:obraId,monto:0};
     await cqUpsertGastoObra(obraId,cqGastoPayloadCaja(mov,base,contexto),!nueva);
   }
-  mov.gastosSyncEstado=mov.imputacionPendienteGastos===false?'no':'ok';
-  mov.gastosSyncAt=new Date().toISOString();
+  var gastosAt=new Date().toISOString();
+  var gastosEstado=mov.imputacionPendienteGastos===false?'no':'ok';
+  // Igual que Acopio: saveToFirebase puede haber reemplazado DB durante el await.
+  // Actualizar por ID el objeto VIGENTE, nunca confiar sólo en la referencia `mov`.
+  mov.gastosSyncEstado=gastosEstado;
+  mov.gastosSyncAt=gastosAt;
   mov.gastosSyncError='';
-  persist();renderCurrent();
+  var movActualGastos=cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:gastosEstado,gastosSyncAt:gastosAt,gastosSyncError:''});
+  if(movActualGastos){persist();renderCurrent();}
   setTimeout(cqVerificarSincronizacionesGastos,500);
 }
 function cqLanzarSyncMovimiento(mov,contexto,oldMov){
   if(!mov)return;
-  mov.gastosSyncEstado=mov.imputacionPendienteGastos===false?'no':'pendiente';
-  persist();renderCurrent();
+  // Trabajar siempre con el movimiento que hoy vive dentro de DB.
+  var actual=cqCajaMovimientoActualPorId(mov.id);
+  if(!actual){console.warn('Caja → Gastos cancelado: el movimiento ya no existe en Caja',mov.id);return;}
+  mov=actual;
+  var estadoInicial=mov.imputacionPendienteGastos===false?'no':'pendiente';
+  var cambioEstado=mov.gastosSyncEstado!==estadoInicial;
+  mov.gastosSyncEstado=estadoInicial;
+  mov.gastosSyncError='';
+  // En altas/ediciones el estado pendiente ya fue confirmado junto con el movimiento.
+  // Evitamos una escritura redundante que abría otra ventana de carrera.
+  if(cambioEstado)persist();
+  renderCurrent();
   cqSyncMovimientoGastos(mov,contexto,oldMov).catch(function(e){
     console.warn('Sync Caja → Gastos',e);
-    mov.gastosSyncEstado='error';
-    mov.gastosSyncError=String(e&&e.message||e);
-    mov.gastosSyncAt=new Date().toISOString();
-    persist();renderCurrent();
+    var err=String(e&&e.message||e),at=new Date().toISOString();
+    mov.gastosSyncEstado='error';mov.gastosSyncError=err;mov.gastosSyncAt=at;
+    var vigente=cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'error',gastosSyncError:err,gastosSyncAt:at});
+    if(vigente){persist();renderCurrent();}
     toast('No se pudo sincronizar con Gastos');
   });
 }
@@ -4825,6 +4879,15 @@ async function guardarGastoDeuda(){
   closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
   var cajaOk=await cqConfirmarCajaAntesDeIntegrar();
   if(!cajaOk)return;
+  if(movSync){
+    var movConfirmado=cqCajaMovimientoActualPorId(movSync.id);
+    if(!movConfirmado){
+      console.error('Caja no conservó el movimiento después de confirmar',movSync.id);
+      toast('⚠️ Caja no confirmó el movimiento. No se envió a módulos externos.');
+      return;
+    }
+    movSync=movConfirmado;
+  }
   if(gdMoneda==='pesos'&&movSync){
     cqLanzarSyncMovimiento(movSync,labelDeuda(gdMoneda),oldSync);
     cqLanzarSyncMaterialesCaja(movSync,oldSync);
@@ -5093,6 +5156,9 @@ async function cqVerifyCajaChicaIntegration(payload){
 }
 async function cqSyncIngresoCajaChicaDesdeFondo(mov,activo){
   if(!mov)return;
+  var actualInicio=cqCajaMovimientoActualPorId(mov.id);
+  if(actualInicio)mov=actualInicio;
+  else return;
   var payload=cqCajaChicaIntegrationPayload(mov,activo);
   mov.cajaChicaIngreso=!!activo;
   mov.cajaChicaSyncEstado='pendiente';
@@ -5114,15 +5180,18 @@ async function cqSyncIngresoCajaChicaDesdeFondo(mov,activo){
     // No dejamos el punto titilando si el estado de Caja Chica tarda en persistir.
     var verificadoEnEstado=escritoEnCajaChica || await cqVerifyCajaChicaIntegration(payload);
     var ok=payload.active!==false ? true : verificadoEnEstado;
-    mov.cajaChicaSyncEstado=ok?'ok':'pendiente';
-    mov.cajaChicaSyncError=ok?'':'Integración enviada; Caja Chica la confirmará al sincronizar.';
-    persist();
+    var ccEstado=ok?'ok':'pendiente';
+    var ccError=ok?'':'Integración enviada; Caja Chica la confirmará al sincronizar.';
+    mov.cajaChicaSyncEstado=ccEstado;mov.cajaChicaSyncError=ccError;
+    var ccActual=cqCajaPatchMovimientoActual(mov.id,{cajaChicaIngreso:!!activo,cajaChicaSyncEstado:ccEstado,cajaChicaSyncError:ccError});
+    if(ccActual)persist();
     try{renderFondo('fondo-pesos');}catch(_e){}
   }catch(e){
     console.warn('Caja Gerencia ↔ Caja Chica',e);
-    mov.cajaChicaSyncEstado='error';
-    mov.cajaChicaSyncError=String(e&&e.message||e);
-    persist();
+    var ccErr=String(e&&e.message||e);
+    mov.cajaChicaSyncEstado='error';mov.cajaChicaSyncError=ccErr;
+    var ccActualErr=cqCajaPatchMovimientoActual(mov.id,{cajaChicaIngreso:!!activo,cajaChicaSyncEstado:'error',cajaChicaSyncError:ccErr});
+    if(ccActualErr)persist();
     try{renderFondo('fondo-pesos');}catch(_e){}
   }
 }
@@ -5540,6 +5609,15 @@ async function guardarGastoFondo(){
   closeModal('modal-gasto-fondo');renderFondo(tipoSync);
   var cajaOk=await cqConfirmarCajaAntesDeIntegrar();
   if(!cajaOk)return;
+  if(movSync){
+    var movConfirmado=cqCajaMovimientoActualPorId(movSync.id);
+    if(!movConfirmado){
+      console.error('Caja no conservó el movimiento después de confirmar',movSync.id);
+      toast('⚠️ Caja no confirmó el movimiento. No se envió a módulos externos.');
+      return;
+    }
+    movSync=movConfirmado;
+  }
   if((tipoSync==='fondo-pesos'||tipoSync==='santander')&&movSync){
     cqLanzarSyncMovimiento(movSync,labelFondo(tipoSync),oldSync);
     cqLanzarSyncMaterialesCaja(movSync,oldSync);
@@ -5889,6 +5967,9 @@ async function guardarIngreso(){
   closeModal('modal-ingreso');renderFondo(ingTipo);
   var cajaOk=await cqConfirmarCajaAntesDeIntegrar();if(!cajaOk){toast('Ingreso guardado en Caja; vínculos externos pendientes');return;}
   if(!movSync)return;
+  var ingresoConfirmado=cqCajaMovimientoActualPorId(movSync.id);
+  if(!ingresoConfirmado){toast('⚠️ Caja no confirmó el ingreso. No se enviaron vínculos externos.');return;}
+  movSync=ingresoConfirmado;
   var huboError=false;
   try{await cqSyncIngresoConGastos(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Gastos',e);toast('Ingreso guardado, pero no se pudo sincronizar con Gastos');}
   try{await cqSyncIngresoFinanciero(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Resumen financiero',e);toast('Ingreso guardado, pero no se pudo sincronizar con Resumen financiero');}
@@ -7000,12 +7081,26 @@ changeUser.addEventListener("click",async()=>{
     if(!window._cqFirebase)throw new Error('Firebase no disponible');
     if(oldMov&&oldMov.panolAgregar&&!mov.panolAgregar)await borrarEntradaPanolCaja(oldMov);
     if(mov.panolAgregar)await upsertEntradaPanolCaja(mov);
-    mov.panolSyncEstado=mov.panolAgregar?'ok':'no';mov.panolSyncError=mov.panolAgregar?'':'No se agregó a Pañol';mov.panolSyncAt=new Date().toISOString();persist();renderCurrent();
+    var panEstado=mov.panolAgregar?'ok':'no',panError=mov.panolAgregar?'':'No se agregó a Pañol',panAt=new Date().toISOString();
+    mov.panolSyncEstado=panEstado;mov.panolSyncError=panError;mov.panolSyncAt=panAt;
+    var panActual=cqCajaPatchMovimientoActual(mov.id,{panolSyncEstado:panEstado,panolSyncError:panError,panolSyncAt:panAt});
+    if(panActual){persist();renderCurrent();}
     setTimeout(verificarPanol,500);return true;
   }
   function lanzarPanol(mov,oldMov){
-    if(!mov)return;if(mov.panolAgregar){mov.panolSyncEstado='pendiente';mov.panolSyncError='';persist();renderCurrent();}
-    syncPanol(mov,oldMov).catch(function(e){console.warn('Caja → Pañol',e);mov.panolSyncEstado='error';mov.panolSyncError=String(e&&e.message||e);mov.panolSyncAt=new Date().toISOString();persist();renderCurrent();toast('No se pudo sincronizar con Pañol');});
+    if(!mov)return;
+    var actual=cqCajaMovimientoActualPorId(mov.id);if(!actual)return;mov=actual;
+    if(mov.panolAgregar){
+      var cambio=mov.panolSyncEstado!=='pendiente'||!!mov.panolSyncError;
+      mov.panolSyncEstado='pendiente';mov.panolSyncError='';
+      if(cambio)persist();renderCurrent();
+    }
+    syncPanol(mov,oldMov).catch(function(e){
+      console.warn('Caja → Pañol',e);var err=String(e&&e.message||e),at=new Date().toISOString();
+      mov.panolSyncEstado='error';mov.panolSyncError=err;mov.panolSyncAt=at;
+      var vigente=cqCajaPatchMovimientoActual(mov.id,{panolSyncEstado:'error',panolSyncError:err,panolSyncAt:at});
+      if(vigente){persist();renderCurrent();}toast('No se pudo sincronizar con Pañol');
+    });
   }
 
   var _lanzarMaterialesBase=window.cqLanzarSyncMaterialesCaja;
