@@ -2472,6 +2472,71 @@ function cqCajaPatchMovimientoActual(id,patch){
   Object.keys(patch||{}).forEach(function(k){actual[k]=patch[k];});
   return actual;
 }
+
+// CQ 30/10/2026 — JOURNAL PERSISTENTE DE CAMBIOS NO CONFIRMADOS.
+// Si el usuario actualiza/cierra mientras Firebase todavía está guardando, la siguiente
+// apertura NO puede borrar la única copia local. Guardamos la base remota conocida + la
+// foto local; al reabrir se rebasan sólo esos cambios sobre el Firebase actual.
+var CQ_CAJA_PENDING_KEY='cq_caja_pending_journal_v1';
+function cqCajaLeerPendienteSeguro(){
+  try{
+    var raw=localStorage.getItem(CQ_CAJA_PENDING_KEY);
+    if(!raw)return null;
+    var p=JSON.parse(raw);
+    if(!p||!p.base||!p.local)return null;
+    p.base=cqCajaSnapshotDB(p.base);
+    p.local=cqCajaSnapshotDB(p.local);
+    return p;
+  }catch(e){console.warn('Caja: journal pendiente inválido',e);return null;}
+}
+function cqCajaGuardarPendienteSeguro(){
+  try{
+    if(!cqCajaLocalDirty){localStorage.removeItem(CQ_CAJA_PENDING_KEY);return;}
+    var payload={
+      v:1,
+      at:new Date().toISOString(),
+      baseRevision:Number(lastRemoteRevision)||0,
+      baseUpdatedAt:lastRemoteUpdatedAt||null,
+      base:cqCajaSnapshotDB(cqCajaLastRemoteDB||emptyDB()),
+      local:cqCajaSnapshotDB(DB),
+      activity:pendingActivity||null
+    };
+    localStorage.setItem(CQ_CAJA_PENDING_KEY,JSON.stringify(payload));
+  }catch(e){console.warn('Caja: no se pudo guardar journal pendiente',e);}
+}
+function cqCajaLimpiarPendienteSeguro(){
+  try{localStorage.removeItem(CQ_CAJA_PENDING_KEY);}catch(e){}
+}
+function cqCajaPendienteAplicadoEnRemoto(p,remoto){
+  if(!p||!p.base||!p.local)return true;
+  var base=cqCajaSnapshotDB(p.base),loc=cqCajaSnapshotDB(p.local),rem=cqCajaSnapshotDB(remoto||emptyDB());
+  var arrays=['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'];
+  for(var i=0;i<arrays.length;i++){
+    var k=arrays[i],b=base[k]||[],l=loc[k]||[],r=rem[k]||[];
+    var bm=new Map(b.map(function(x){return [String(x&&x.id),x];}));
+    var lm=new Map(l.map(function(x){return [String(x&&x.id),x];}));
+    var rm=new Map(r.map(function(x){return [String(x&&x.id),x];}));
+    for(var bi=0;bi<b.length;bi++){
+      var bid=String(b[bi]&&b[bi].id);
+      if(bid&&!lm.has(bid)&&rm.has(bid))return false;
+    }
+    for(var li=0;li<l.length;li++){
+      var x=l[li],id=String(x&&x.id);if(!id)continue;
+      var previo=bm.get(id);
+      var cambio=!previo||JSON.stringify(previo)!==JSON.stringify(x);
+      if(cambio){
+        var rr=rm.get(id);
+        if(!rr||JSON.stringify(rr)!==JSON.stringify(x))return false;
+      }
+    }
+  }
+  var scalars=['fondoPesosSaldoInicial','fondoUsdSaldoInicial','santanderSaldoInicial','santanderUsdSaldoInicial','lastTC'];
+  for(var si=0;si<scalars.length;si++){
+    var sk=scalars[si];
+    if(JSON.stringify(loc[sk])!==JSON.stringify(base[sk])&&JSON.stringify(rem[sk])!==JSON.stringify(loc[sk]))return false;
+  }
+  return true;
+}
 // Aplica sobre la última Caja remota únicamente los cambios hechos localmente desde la última base confirmada.
 // Esto permite convivir con otro dispositivo sin reemplazar toda la Caja ni perder altas/modificaciones/bajas locales.
 function cqCajaRebaseLocalSobreRemoto(baseAnterior,localActual,remotoActual){
@@ -2562,6 +2627,8 @@ function persist(activityText){
   cqCajaLocalRevision++;
   cqCajaLocalDirty=true;
   localStorage.setItem(DB_KEY,JSON.stringify(DB));
+  // Guardar SIEMPRE antes de cualquier await/timer. Así un refresh no puede borrar la carga.
+  cqCajaGuardarPendienteSeguro();
   scheduleFirebaseSave();
 }
 function scheduleFirebaseSave(){
@@ -2634,12 +2701,16 @@ async function saveToFirebase(){
         cqCajaLocalDirty=true;
         guardarSiguiente=true;
         localStorage.setItem(DB_KEY,JSON.stringify(DB));
+        // La primera escritura quedó confirmada, pero entraron cambios nuevos mientras esperaba.
+        // Rebasarlos sobre esa base confirmada y renovar el journal antes de continuar.
+        cqCajaGuardarPendienteSeguro();
         setSyncStatus('Sync: pendiente');
       }else{
         DB=cqCajaSnapshotDB(confirmado);
         cqCajaLocalDirty=false;
         localStorage.setItem(DB_KEY,JSON.stringify(DB));
         pendingActivity=null;
+        cqCajaLimpiarPendienteSeguro();
         setSyncStatus('Sync: ON');
       }
       renderCurrent();
@@ -2649,6 +2720,7 @@ async function saveToFirebase(){
       try{localStorage.setItem('cq_caja_conflict_recovery',JSON.stringify({at:new Date().toISOString(),db:sanitizeDB(DB),activity:pendingActivity||null}));}catch(_e){}
       // Ante cualquier conflicto/error conservar lo local; nunca reemplazar automáticamente por una copia remota.
       cqCajaLocalDirty=true;
+      cqCajaGuardarPendienteSeguro();
       setSyncStatus('Sync: pendiente',true);
       return false;
     }finally{
@@ -2665,9 +2737,87 @@ async function saveToFirebase(){
   })();
   return firebaseSavePromise;
 }
-async function cqConfirmarCajaAntesDeIntegrar(){
+async function cqConfirmarCajaAntesDeIntegrar(movId){
   clearTimeout(saveTimer);
-  return await saveToFirebase();
+
+  // Conservar una copia del movimiento antes de cualquier await. Si por una anomalía
+  // el guardado devolviera OK pero el ID no estuviera realmente en Firebase, podemos
+  // reponerlo sin depender de una referencia vieja.
+  var esperado=null,esperadoKey='';
+  if(movId!=null){
+    var sid=String(movId);
+    var keys=['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'];
+    for(var i=0;i<keys.length&&!esperado;i++){
+      var arr=Array.isArray(DB[keys[i]])?DB[keys[i]]:[];
+      var m=arr.find(function(x){return String(x&&x.id)===sid;});
+      if(m){esperado=JSON.parse(JSON.stringify(m));esperadoKey=keys[i];}
+    }
+  }
+
+  var ok=await saveToFirebase();
+  if(!ok||!esperado)return !!ok;
+
+  // Barrera real: no iniciar Gastos/Materiales/Pañol hasta comprobar que el movimiento
+  // existe en el documento REMOTO de Caja. Esto hace que el verde externo nunca sea la
+  // condición para que Caja sobreviva a un refresh.
+  try{
+    var f=window._cqFirebase;
+    var ref=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
+    var snap=await f.getDoc(ref);
+    var data=snap.exists()?(snap.data()||{}):{};
+    var remoto=data.db?cqCajaSnapshotDB(data.db):null;
+    var existe=false;
+    if(remoto){
+      ['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'].some(function(k){
+        existe=(remoto[k]||[]).some(function(x){return String(x&&x.id)===String(movId);});
+        return existe;
+      });
+    }
+    if(existe)return true;
+
+    console.error('Caja: Firebase confirmó la transacción pero no contiene el movimiento esperado',movId);
+
+    // Reponer sobre la lectura remota recién obtenida y dejar journal ANTES del reintento.
+    if(remoto){
+      cqCajaLastRemoteDB=cqCajaSnapshotDB(remoto);
+      lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
+      lastRemoteRevision=Number(data.revision)||lastRemoteRevision;
+      DB=cqCajaSnapshotDB(remoto);
+    }
+    if(!DB[esperadoKey])DB[esperadoKey]=[];
+    if(!(DB[esperadoKey]||[]).some(function(x){return String(x&&x.id)===String(movId);})){DB[esperadoKey].push(esperado);}
+    cqCajaLocalRevision++;
+    cqCajaLocalDirty=true;
+    localStorage.setItem(DB_KEY,JSON.stringify(DB));
+    cqCajaGuardarPendienteSeguro();
+    setSyncStatus('Sync: reintentando Caja...');
+
+    var retry=await saveToFirebase();
+    if(!retry)return false;
+
+    // Una última verificación por ID. Si no aparece, no se lanzan vínculos externos.
+    var snap2=await f.getDoc(ref);
+    var r2=(snap2.exists()&&snap2.data()&&snap2.data().db)?cqCajaSnapshotDB(snap2.data().db):null;
+    var existe2=false;
+    if(r2){
+      ['deudaPesos','deudaUsd','fondoPesosMovs','fondoUsdMovs','santanderMovs','santanderUsdMovs'].some(function(k){
+        existe2=(r2[k]||[]).some(function(x){return String(x&&x.id)===String(movId);});
+        return existe2;
+      });
+    }
+    if(!existe2){
+      cqCajaLocalDirty=true;
+      cqCajaGuardarPendienteSeguro();
+      setSyncStatus('Sync: pendiente',true);
+      return false;
+    }
+    return true;
+  }catch(e){
+    // El save principal ya fue confirmado. Si falla sólo la lectura de verificación,
+    // no borramos ni tocamos el movimiento; el journal/estado normal de Caja lo protege.
+    console.warn('Caja: no se pudo verificar el movimiento remoto por ID',e);
+    return true;
+  }
 }
 
 // CQ 25/08/2026 — BACKUP DIARIO AUTOMÁTICO DE CAJA.
@@ -2748,20 +2898,54 @@ async function loadFromFirebase(){
       return false;
     }
 
-    // Firebase es la fuente autoritativa al abrir.
-    DB=cqCajaSnapshotDB(snap.data().db);
-    cqCajaLastRemoteDB=cqCajaSnapshotDB(snap.data().db);
-    cqCajaLocalDirty=false;
-    cqCajaDeferredRemote=null;
+    var remotoInicial=cqCajaSnapshotDB(snap.data().db);
+    var pendienteInicio=cqCajaLeerPendienteSeguro();
+
+    // Firebase sigue siendo la base autoritativa, PERO un journal local pendiente representa
+    // cambios que el usuario ya confirmó en pantalla y que pudieron quedar en vuelo al refrescar.
+    // Se rebasan sólo esos cambios sobre el remoto actual; nunca se publica una DB local completa vieja.
+    cqCajaLastRemoteDB=cqCajaSnapshotDB(remotoInicial);
     lastRemoteUpdatedAt=snap.data().updatedAt||null;
     lastRemoteRevision=Number(snap.data().revision)||0;
-    localStorage.setItem(DB_KEY,JSON.stringify(DB));
+    cqCajaDeferredRemote=null;
+    pendingActivity=null;
+
+    if(pendienteInicio){
+      DB=cqCajaRebaseLocalSobreRemoto(pendienteInicio.base,pendienteInicio.local,remotoInicial);
+      pendingActivity=pendienteInicio.activity||null;
+      cqCajaLocalDirty=!cqCajaPendienteAplicadoEnRemoto(pendienteInicio,remotoInicial);
+      if(cqCajaLocalDirty){
+        cqCajaLocalRevision++;
+        localStorage.setItem(DB_KEY,JSON.stringify(DB));
+        cqCajaGuardarPendienteSeguro();
+      }else{
+        DB=cqCajaSnapshotDB(remotoInicial);
+        localStorage.setItem(DB_KEY,JSON.stringify(DB));
+        cqCajaLimpiarPendienteSeguro();
+      }
+    }else{
+      DB=cqCajaSnapshotDB(remotoInicial);
+      cqCajaLocalDirty=false;
+      localStorage.setItem(DB_KEY,JSON.stringify(DB));
+    }
 
     // Recién ahora se habilitan escrituras.
     cqCajaRemoteLoaded=true;
-    setSyncStatus('Sync: ON');
     listenFirebase();
     renderCurrent();
+
+    if(cqCajaLocalDirty){
+      setSyncStatus('Sync: recuperando pendiente...');
+      // Esperar la recuperación antes de declarar ON. Si falla, el journal queda intacto.
+      var recuperado=await saveToFirebase();
+      if(!recuperado){
+        setSyncStatus('Sync: pendiente',true);
+        return false;
+      }
+    }else{
+      setSyncStatus('Sync: ON');
+    }
+
     await cqDispararBackupCajaConfirmada();
     return true;
 
@@ -2833,6 +3017,7 @@ function listenFirebase(){
     lastRemoteUpdatedAt=data.updatedAt||lastRemoteUpdatedAt;
     if(dataRevision>0)lastRemoteRevision=dataRevision;
     localStorage.setItem(DB_KEY,JSON.stringify(DB));
+    cqCajaLimpiarPendienteSeguro();
     setSyncStatus('Sync: ON');
     renderCurrent();
     if(isNew && data.lastActivity) toast(data.lastActivity);
@@ -2842,6 +3027,11 @@ document.addEventListener('cq-firebase-ready',loadFromFirebase);
 setTimeout(function(){
   if(!window._cqFirebaseReady){setSyncStatus('Sync: local',true);renderCurrent();}
 },1800);
+
+window.addEventListener('beforeunload',function(){
+  // localStorage es síncrono: dejar una última foto recuperable si hay algo pendiente.
+  if(cqCajaLocalDirty) cqCajaGuardarPendienteSeguro();
+});
 
 function fmtN(n,dec){if(n==null||isNaN(n))return '-';dec=dec!=null?dec:2;return parseFloat(n).toLocaleString('es-AR',{maximumFractionDigits:dec});}
 function fmtP(n){return '$'+fmtN(n,0);}
@@ -4877,7 +5067,7 @@ async function guardarGastoDeuda(){
       :'Se cargó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
   }
   closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
-  var cajaOk=await cqConfirmarCajaAntesDeIntegrar();
+  var cajaOk=await cqConfirmarCajaAntesDeIntegrar(movSync&&movSync.id);
   if(!cajaOk)return;
   if(movSync){
     var movConfirmado=cqCajaMovimientoActualPorId(movSync.id);
@@ -5607,7 +5797,7 @@ async function guardarGastoFondo(){
   }
   var tipoSync=gfTipo;
   closeModal('modal-gasto-fondo');renderFondo(tipoSync);
-  var cajaOk=await cqConfirmarCajaAntesDeIntegrar();
+  var cajaOk=await cqConfirmarCajaAntesDeIntegrar(movSync&&movSync.id);
   if(!cajaOk)return;
   if(movSync){
     var movConfirmado=cqCajaMovimientoActualPorId(movSync.id);
@@ -5965,7 +6155,7 @@ async function guardarIngreso(){
     toast('✓ Ingreso registrado: '+cfg.fmt(monto));persist('Se cargó un ingreso de '+cfg.fmt(monto)+' en '+labelFondo(ingTipo));
   }
   closeModal('modal-ingreso');renderFondo(ingTipo);
-  var cajaOk=await cqConfirmarCajaAntesDeIntegrar();if(!cajaOk){toast('Ingreso guardado en Caja; vínculos externos pendientes');return;}
+  var cajaOk=await cqConfirmarCajaAntesDeIntegrar(movSync&&movSync.id);if(!cajaOk){toast('Ingreso guardado en Caja; vínculos externos pendientes');return;}
   if(!movSync)return;
   var ingresoConfirmado=cqCajaMovimientoActualPorId(movSync.id);
   if(!ingresoConfirmado){toast('⚠️ Caja no confirmó el ingreso. No se enviaron vínculos externos.');return;}
