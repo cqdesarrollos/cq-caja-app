@@ -3487,8 +3487,18 @@ async function cqVerificarSincronizacionesGastos(){
             var imp=imps[i], arr=docs[imp.obraId];
             if(arr===null){ok=false;err='No se pudo verificar Firebase';break;}
             var id=cqGastosLinkId(m.id,imp.obraId);
-            var g=arr.find(function(x){return String(x.id)===String(id);});
-            if(!g){ok=false;err='El gasto vinculado ya no existe en Gastos';break;}
+            var g=arr.find(function(x){return String(x&&x.id)===String(id);});
+            if(!g){
+              // Compatibilidad legacy: reconocer el vínculo por movimiento Caja + obra
+              // aunque el registro de Gastos haya sido creado con un ID anterior.
+              g=arr.find(function(x){
+                if(!x)return false;
+                var mid=String(x.cajaMovimientoId||x.cajaGerenciaMovimientoId||'');
+                var oid=String(x.cajaObraId||imp.obraId||'');
+                return mid===String(m.id)&&oid===String(imp.obraId);
+              });
+            }
+            if(!g){ok=false;err='No se encontró vínculo Caja→Gastos por ID ni por movimiento/obra';break;}
             if(Math.abs((Number(g.monto)||0)-(Number(imp.monto)||0))>0.01){
               ok=false;err='El importe en Gastos no coincide';break;
             }
@@ -4689,7 +4699,16 @@ async function cqUpsertGastoObra(obraId,payload,removeOnly){
     var snap=await tx.get(ref);
     var data=snap.exists()?snap.data():{gastos:[],financiero:{venta:0,comision:0,acuerdosMO:{mo:{monto:0,moneda:'usd',tc:1400},ext:{}}}};
     var gastos=Array.isArray(data.gastos)?data.gastos.slice():[];
-    gastos=gastos.filter(function(g){return String(g.id)!==String(payload.id);});
+    gastos=gastos.filter(function(g){
+      if(!g)return false;
+      if(String(g.id)===String(payload.id))return false;
+      // Compatibilidad con versiones anteriores de Caja: el gasto puede existir
+      // con otro ID, pero conservar el vínculo estructurado al mismo movimiento/obra.
+      var mismoMov=String(g.cajaMovimientoId||g.cajaGerenciaMovimientoId||'')===String(payload.cajaMovimientoId||payload.cajaGerenciaMovimientoId||'');
+      var mismaObra=String(g.cajaObraId||obraId||'')===String(payload.cajaObraId||obraId||'');
+      if(mismoMov&&mismaObra)return false;
+      return true;
+    });
     if(!removeOnly)gastos.push(payload);
     data.gastos=gastos;
     data.updatedAt=new Date().toISOString();
@@ -7323,6 +7342,7 @@ changeUser.addEventListener("click",async()=>{
 
 
 <!-- CQ 30/10/2026 — Reparación automática Caja → Gastos: rojo/pending nunca queda huérfano -->
+<!-- CQ 30/10/2026 v5 — compatibilidad de IDs históricos Caja→Gastos -->
 <script id="cq-caja-gastos-repair-v3">
 (function(){
   'use strict';
@@ -7357,6 +7377,16 @@ changeUser.addEventListener("click",async()=>{
     var arr=Array.isArray((snap.data()||{}).gastos)?snap.data().gastos:[];
     var id=cqGastosLinkId(mov.id,imp.obraId);
     var g=arr.find(function(x){return String(x&&x.id)===String(id);});
+    if(!g){
+      // Registros creados por versiones anteriores pueden tener otro ID.
+      // El vínculo estructurado es suficiente para identificar el mismo gasto.
+      g=arr.find(function(x){
+        if(!x)return false;
+        var mid=String(x.cajaMovimientoId||x.cajaGerenciaMovimientoId||'');
+        var oid=String(x.cajaObraId||imp.obraId||'');
+        return mid===String(mov.id)&&oid===String(imp.obraId);
+      });
+    }
     if(!g)return false;
     return Math.abs((Number(g.monto)||0)-(Number(imp.monto)||0))<=0.01;
   }
