@@ -3516,7 +3516,8 @@ window.addEventListener('focus',function(){setTimeout(cqVerificarSincronizacione
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible')setTimeout(cqVerificarSincronizacionesGastos,300);
 });
-setTimeout(cqVerificarSincronizacionesGastos,1500);
+// CQ 30/10 v4: desactivado escaneo histórico completo; la reparación rápida procesa sólo rojos/pendientes.
+setTimeout(function(){ if(window.cqRepararPendientesGastosCaja) window.cqRepararPendientesGastosCaja(); },1500);
 
 function renderDeuda(moneda){
   renderBalanza(moneda);
@@ -4764,7 +4765,7 @@ function cqSyncDotHTML(mov){
       :(st==='no'
         ?'No se agregó a Gastos'
         :(mov&&mov.gastosSyncError?mov.gastosSyncError:'Error o pendiente de sincronización con Gastos')));
-  return '<span class="cq-gastos-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span>';
+  return '<span class="cq-gastos-sync-dot '+cls+'" title="'+escapeHTML(title)+'"'+(st!=='ok'&&st!=='no'?' onclick="if(window.cqReintentarGastoCajaPorId)window.cqReintentarGastoCajaPorId(\''+String(mov.id)+'\')" style="cursor:pointer"':'')+'></span>';
 }
 function cqMaterialesDotHTML(mov){
   if(!mov)return '';
@@ -7328,6 +7329,25 @@ changeUser.addEventListener("click",async()=>{
 
   function cqSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
+  window.cqReintentarGastoCajaPorId=async function(id){
+    var mov=cqCajaMovimientoActualPorId(id);
+    if(!mov)return false;
+    if(mov.imputacionPendienteGastos===false)return false;
+    cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'pendiente',gastosSyncError:''});
+    try{localStorage.setItem(DB_KEY,JSON.stringify(DB));}catch(_e){}
+    renderCurrent();
+    try{
+      await cqSyncMovimientoGastos(mov,'Caja',null);
+      return true;
+    }catch(e){
+      var err=String(e&&e.message||e),at=new Date().toISOString();
+      cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'error',gastosSyncError:err,gastosSyncAt:at});
+      persist();renderCurrent();
+      console.warn('Caja → Gastos retry manual',mov.id,e);
+      return false;
+    }
+  };
+
   async function cqConfirmarGastoCajaEnObra(mov,imp){
     var f=window._cqFirebase;
     if(!f||!f.getDoc)throw new Error('Firebase no disponible para verificar Gastos');
@@ -7408,31 +7428,26 @@ changeUser.addEventListener("click",async()=>{
     if(cqRepairRunning||!window._cqFirebaseReady||!window._cqFirebase)return;
     cqRepairRunning=true;
     try{
-      var movs=cqMovimientosCajaPesos().slice();
-      for(var i=0;i<movs.length;i++){
+      // CQ v4 — NO recorrer los cientos de movimientos verdes.
+      // Procesar exclusivamente rojos/pendientes, empezando por el más nuevo.
+      var movs=cqMovimientosCajaPesos().filter(function(m){
+        if(!m||m.imputacionPendienteGastos===false)return false;
+        if(!Array.isArray(m.imputaciones)||!m.imputaciones.length)return false;
+        return m.gastosSyncEstado!=='ok' && m.gastosSyncEstado!=='no';
+      }).sort(function(a,b){
+        var ta=Date.parse(a.updatedAt||a.creadoAt||a.fecha||'')||Number(a.id)||0;
+        var tb=Date.parse(b.updatedAt||b.creadoAt||b.fecha||'')||Number(b.id)||0;
+        return tb-ta;
+      });
+
+      // Máximo 12 por tanda para no bloquear una carga nueva ni saturar Firebase.
+      var limite=Math.min(movs.length,12);
+      for(var i=0;i<limite;i++){
         var m=movs[i];
-        if(!m||m.imputacionPendienteGastos===false)continue;
-        if(!Array.isArray(m.imputaciones)||!m.imputaciones.length)continue;
         var vigente=cqCajaMovimientoActualPorId(m.id);
         if(!vigente)continue;
-
-        // Verificar primero sin escribir. Si ya está, sólo corregir el color local.
-        var todoOk=true;
-        for(var j=0;j<vigente.imputaciones.length;j++){
-          try{
-            if(!(await cqConfirmarGastoCajaEnObra(vigente,vigente.imputaciones[j]))){todoOk=false;break;}
-          }catch(e){todoOk=false;break;}
-        }
-        if(todoOk){
-          if(vigente.gastosSyncEstado!=='ok'){
-            cqCajaPatchMovimientoActual(vigente.id,{gastosSyncEstado:'ok',gastosSyncError:'',gastosSyncAt:new Date().toISOString()});
-            persist();renderCurrent();
-          }
-          continue;
-        }
-
-        // Si falta o no coincide, repararlo automáticamente por el mismo ID.
         try{
+          // Directo a upsert + confirmación. No hacer una lectura previa que sólo agrega demora.
           await cqSyncMovimientoGastos(vigente,'Caja',null);
         }catch(e){
           var err=String(e&&e.message||e);
@@ -7441,20 +7456,24 @@ changeUser.addEventListener("click",async()=>{
           console.warn('Caja → Gastos: reparación pendiente',vigente.id,e);
         }
       }
+      // Si quedaron más pendientes históricos, seguir luego sin trabar la UI ni una carga nueva.
+      if(movs.length>limite)setTimeout(cqRepararPendientesGastosCaja,1800);
     }finally{
       cqRepairRunning=false;
     }
   }
 
   // La verificación pública pasa a reparar, no sólo a pintar rojo.
+  window.cqRepararPendientesGastosCaja=cqRepararPendientesGastosCaja;
+  window.CQ_GASTOS_REPAIR_V4=true;
   cqVerificarSincronizacionesGastos=async function(){
     return cqRepararPendientesGastosCaja();
   };
 
   // También reparar al abrir/refrescar, incluso si el timeout de la versión anterior
   // quedó apuntando a la función vieja.
-  setTimeout(cqRepararPendientesGastosCaja,900);
-  setTimeout(cqRepararPendientesGastosCaja,2600);
+  setTimeout(cqRepararPendientesGastosCaja,700);
+  setTimeout(cqRepararPendientesGastosCaja,2400);
   window.addEventListener('focus',function(){setTimeout(cqRepararPendientesGastosCaja,250);});
   document.addEventListener('visibilitychange',function(){
     if(document.visibilityState==='visible')setTimeout(cqRepararPendientesGastosCaja,250);
