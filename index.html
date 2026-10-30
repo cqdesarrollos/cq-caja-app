@@ -6811,10 +6811,20 @@ changeUser.addEventListener("click",async()=>{
     }catch(e){console.warn('No se pudo seleccionar obra Acopio automáticamente',e);}
   }
 
+  function cqCajaChicaSegunDestinos(prefix){
+    if(prefix!=='gf')return;
+    var row=document.getElementById('gf-caja-chica-row');
+    var chk=document.getElementById('gf-ingreso-caja-chica');
+    var gas=document.getElementById('gf-agregar-gastos');
+    var mostrar=(gfTipo==='fondo-pesos' && !!gas && !gas.checked && !panolActivo('gf'));
+    if(row)row.classList.toggle('show',mostrar);
+    if(chk && !mostrar)chk.checked=false;
+  }
+
   function cqCajaPanolToggle(prefix){
     var activo=panolActivo(prefix),sin=panolSinPrecio(prefix),panel=document.getElementById(prefix+'-panol-panel'),gas=document.getElementById(prefix+'-agregar-gastos'),note=document.getElementById(prefix+'-panol-gastos-note');
     if(panel)panel.classList.toggle('show',activo);
-    if(!gas)return;
+    if(!gas){cqCajaChicaSegunDestinos(prefix);return;}
     if(activo){
       if(typeof cqPanolPrevGastos[prefix]!=='boolean')cqPanolPrevGastos[prefix]=!!gas.checked;
       // Pañol nunca impacta directamente Materiales desde Caja.
@@ -6834,6 +6844,7 @@ changeUser.addEventListener("click",async()=>{
       if(note)note.textContent='';
     }
     if(typeof _cqImpToggleAgregarBase==='function')_cqImpToggleAgregarBase(prefix);
+    cqCajaChicaSegunDestinos(prefix);
     if(typeof cqActualizarBotonMateriales==='function')cqActualizarBotonMateriales(prefix);
     cqCajaPanolRenderProducto(prefix);cqCajaPanolPreview(prefix);
   }
@@ -6850,8 +6861,7 @@ changeUser.addEventListener("click",async()=>{
         var gas=document.getElementById(prefix+'-agregar-gastos');
         if(gas&&(!panolSinPrecio(prefix))){gas.checked=false;gas.disabled=true;_cqImpToggleAgregarBase(prefix);}
       }
-      var ccRow=document.getElementById('gf-caja-chica-row');
-      if(prefix==='gf'&&ccRow&&panolActivo(prefix))ccRow.classList.remove('show');
+      cqCajaChicaSegunDestinos(prefix);
     };
   }
 
