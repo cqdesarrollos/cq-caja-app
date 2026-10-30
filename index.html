@@ -7319,5 +7319,148 @@ changeUser.addEventListener("click",async()=>{
 })();
 </script>
 
+
+
+<!-- CQ 30/10/2026 — Reparación automática Caja → Gastos: rojo/pending nunca queda huérfano -->
+<script id="cq-caja-gastos-repair-v3">
+(function(){
+  'use strict';
+
+  function cqSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+  async function cqConfirmarGastoCajaEnObra(mov,imp){
+    var f=window._cqFirebase;
+    if(!f||!f.getDoc)throw new Error('Firebase no disponible para verificar Gastos');
+    var ref=f.doc(f.db,'gastos',imp.obraId);
+    var snap=await f.getDoc(ref);
+    if(!snap.exists())return false;
+    var arr=Array.isArray((snap.data()||{}).gastos)?snap.data().gastos:[];
+    var id=cqGastosLinkId(mov.id,imp.obraId);
+    var g=arr.find(function(x){return String(x&&x.id)===String(id);});
+    if(!g)return false;
+    return Math.abs((Number(g.monto)||0)-(Number(imp.monto)||0))<=0.01;
+  }
+
+  async function cqUpsertYConfirmarGastoCaja(mov,imp,contexto){
+    var payload=cqGastoPayloadCaja(mov,imp,contexto||'Caja');
+    var esperas=[0,180,420,850];
+    var ultimoError=null;
+    for(var intento=0;intento<esperas.length;intento++){
+      try{
+        if(esperas[intento])await cqSleep(esperas[intento]);
+        // Reescribir en los intentos 0 y 2. El upsert es idempotente por ID.
+        if(intento===0||intento===2){
+          await cqUpsertGastoObra(imp.obraId,payload,false);
+        }
+        if(await cqConfirmarGastoCajaEnObra(mov,imp))return true;
+      }catch(e){ultimoError=e;}
+    }
+    if(ultimoError)throw ultimoError;
+    throw new Error('Gastos no confirmó el vínculo '+String(payload.id));
+  }
+
+  // Reemplaza la sincronización original: no declara verde por el simple hecho de que
+  // la transacción terminó. Verde significa que el ID fue releído y existe en Gastos.
+  cqSyncMovimientoGastos=async function(mov,contexto,oldMov){
+    if(!mov)return false;
+    var vigente=cqCajaMovimientoActualPorId(mov.id)||mov;
+    mov=vigente;
+    var nuevas=(mov.imputacionPendienteGastos!==false&&Array.isArray(mov.imputaciones))?mov.imputaciones:[];
+    var viejas=(oldMov&&Array.isArray(oldMov.imputaciones))?oldMov.imputaciones:[];
+
+    // Si una edición movió el gasto a otra obra, limpiar primero las obras que ya no corresponden.
+    for(var v=0;v<viejas.length;v++){
+      var vieja=viejas[v];
+      if(!vieja||!vieja.obraId)continue;
+      var sigue=nuevas.some(function(x){return x&&x.obraId===vieja.obraId;});
+      if(!sigue){
+        await cqUpsertGastoObra(vieja.obraId,cqGastoPayloadCaja(mov,vieja,contexto||'Caja'),true);
+      }
+    }
+
+    if(mov.imputacionPendienteGastos===false){
+      var atNo=new Date().toISOString();
+      cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'no',gastosSyncAt:atNo,gastosSyncError:''});
+      persist();renderCurrent();
+      return true;
+    }
+    if(!nuevas.length)throw new Error('El gasto está marcado para Gastos pero no tiene obra/imputación');
+
+    // Mantener rojo titilando mientras se repara/confirma.
+    cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'pendiente',gastosSyncError:''});
+    try{localStorage.setItem(DB_KEY,JSON.stringify(DB));}catch(_e){}
+    renderCurrent();
+
+    for(var i=0;i<nuevas.length;i++){
+      var imp=nuevas[i];
+      if(!imp||!imp.obraId)throw new Error('Imputación sin obra de Gastos');
+      await cqUpsertYConfirmarGastoCaja(mov,imp,contexto||'Caja');
+    }
+
+    var atOk=new Date().toISOString();
+    var actual=cqCajaPatchMovimientoActual(mov.id,{gastosSyncEstado:'ok',gastosSyncAt:atOk,gastosSyncError:''});
+    if(actual){persist();renderCurrent();}
+    return true;
+  };
+
+  var cqRepairRunning=false;
+  async function cqRepararPendientesGastosCaja(){
+    if(cqRepairRunning||!window._cqFirebaseReady||!window._cqFirebase)return;
+    cqRepairRunning=true;
+    try{
+      var movs=cqMovimientosCajaPesos().slice();
+      for(var i=0;i<movs.length;i++){
+        var m=movs[i];
+        if(!m||m.imputacionPendienteGastos===false)continue;
+        if(!Array.isArray(m.imputaciones)||!m.imputaciones.length)continue;
+        var vigente=cqCajaMovimientoActualPorId(m.id);
+        if(!vigente)continue;
+
+        // Verificar primero sin escribir. Si ya está, sólo corregir el color local.
+        var todoOk=true;
+        for(var j=0;j<vigente.imputaciones.length;j++){
+          try{
+            if(!(await cqConfirmarGastoCajaEnObra(vigente,vigente.imputaciones[j]))){todoOk=false;break;}
+          }catch(e){todoOk=false;break;}
+        }
+        if(todoOk){
+          if(vigente.gastosSyncEstado!=='ok'){
+            cqCajaPatchMovimientoActual(vigente.id,{gastosSyncEstado:'ok',gastosSyncError:'',gastosSyncAt:new Date().toISOString()});
+            persist();renderCurrent();
+          }
+          continue;
+        }
+
+        // Si falta o no coincide, repararlo automáticamente por el mismo ID.
+        try{
+          await cqSyncMovimientoGastos(vigente,'Caja',null);
+        }catch(e){
+          var err=String(e&&e.message||e);
+          cqCajaPatchMovimientoActual(vigente.id,{gastosSyncEstado:'error',gastosSyncError:err,gastosSyncAt:new Date().toISOString()});
+          persist();renderCurrent();
+          console.warn('Caja → Gastos: reparación pendiente',vigente.id,e);
+        }
+      }
+    }finally{
+      cqRepairRunning=false;
+    }
+  }
+
+  // La verificación pública pasa a reparar, no sólo a pintar rojo.
+  cqVerificarSincronizacionesGastos=async function(){
+    return cqRepararPendientesGastosCaja();
+  };
+
+  // También reparar al abrir/refrescar, incluso si el timeout de la versión anterior
+  // quedó apuntando a la función vieja.
+  setTimeout(cqRepararPendientesGastosCaja,900);
+  setTimeout(cqRepararPendientesGastosCaja,2600);
+  window.addEventListener('focus',function(){setTimeout(cqRepararPendientesGastosCaja,250);});
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='visible')setTimeout(cqRepararPendientesGastosCaja,250);
+  });
+})();
+</script>
+
 </body>
 </html>
