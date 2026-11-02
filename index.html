@@ -3901,36 +3901,45 @@ var cqImpSel={gd:[],gf:[]};
 var cqMaterialesDraft={gd:[],gf:[]};
 var cqMaterialesModalPrefix=null;
 const CQ_BASE_CATALOGO_MATERIALES=[{"id":1,"name":"Hierro 6","code":"","category":"HIERROS"},{"id":2,"name":"Hierro 8","code":"","category":"HIERROS"},{"id":3,"name":"Hierro 10","code":"","category":"HIERROS"},{"id":4,"name":"Mallas Q188","code":"","category":"HIERROS"},{"id":5,"name":"Mallas Q100 (4mm)","code":"","category":"HIERROS"},{"id":6,"name":"Mallas Q131","code":"","category":"HIERROS"},{"id":7,"name":"Cemento","code":"","category":"CEMENTO Y HERCAL"},{"id":8,"name":"Hercal","code":"","category":"CEMENTO Y HERCAL"},{"id":9,"name":"Pallets Cemento","code":"","category":"CEMENTO Y HERCAL"},{"id":10,"name":"Pallets Hercal","code":"","category":"CEMENTO Y HERCAL"},{"id":11,"name":"Portante 12 (126u)","code":"","category":"LADRILLOS"},{"id":12,"name":"Portante 18 (90u)","code":"","category":"LADRILLOS"},{"id":13,"name":"Techo 16,5 (60u)","code":"","category":"LADRILLOS"},{"id":14,"name":"Techo 11 (80u)","code":"","category":"LADRILLOS"},{"id":15,"name":"Tabique 12 Palmar (144u)","code":"","category":"LADRILLOS"},{"id":16,"name":"Tabique 8 Palmar (198u)","code":"","category":"LADRILLOS"},{"id":17,"name":"Portante bloque 12","code":"","category":"LADRILLOS"},{"id":18,"name":"Portante bloque 18","code":"","category":"LADRILLOS"},{"id":19,"name":"Bovedillas","code":"","category":"LADRILLOS"},{"id":20,"name":"Ladrillon 18","code":"","category":"LADRILLOS"},{"id":21,"name":"Ladrillos comunes","code":"","category":"LADRILLOS"},{"id":22,"name":"Techi Cau emuls. Asf.","code":"","category":"IMPERMEABILIZANTES"},{"id":23,"name":"Hidrofugo 20 kgs","code":"","category":"IMPERMEABILIZANTES"},{"id":24,"name":"Agrotileno","code":"","category":"IMPERMEABILIZANTES"},{"id":25,"name":"Sika Latex 5 Lts","code":"","category":"IMPERMEABILIZANTES"},{"id":26,"name":"Alambre kgs","code":"","category":"ALAMBRES Y CLAVOS"},{"id":27,"name":"Clavos kgs","code":"","category":"ALAMBRES Y CLAVOS"},{"id":28,"name":"Fino interior","code":"","category":"REVOQUES Y YESO"},{"id":29,"name":"Fino exterior","code":"","category":"REVOQUES Y YESO"},{"id":30,"name":"Yeso (40 kgs)","code":"","category":"REVOQUES Y YESO"},{"id":31,"name":"Guardacanto yesero x 2m","code":"","category":"REVOQUES Y YESO"},{"id":32,"name":"Viguetas 6,5 mts","code":"","category":"VIGUETAS"},{"id":33,"name":"Viguetas 4,20 mts","code":"","category":"VIGUETAS"},{"id":34,"name":"Viguetas 4 mts","code":"","category":"VIGUETAS"},{"id":35,"name":"Viguetas 3,20 mts","code":"","category":"VIGUETAS"},{"id":36,"name":"Viguetas 3 mts","code":"","category":"VIGUETAS"},{"id":37,"name":"Viguetas 2,80 mts","code":"","category":"VIGUETAS"},{"id":38,"name":"Viguetas 2 mts","code":"","category":"VIGUETAS"},{"id":39,"name":"Viguetas 1,80 mts","code":"","category":"VIGUETAS"},{"id":40,"name":"Viguetas 1,60 mts","code":"","category":"VIGUETAS"},{"id":41,"name":"Viguetas 1,40 mts","code":"","category":"VIGUETAS"},{"id":42,"name":"Viguetas 1 mts","code":"","category":"VIGUETAS"},{"id":43,"name":"Peg. Porcelanato x25kg","code":"","category":"PEGAMENTOS Y PISOS"},{"id":44,"name":"Peg. Ceramica x25kg","code":"","category":"PEGAMENTOS Y PISOS"},{"id":45,"name":"Pastina kgs","code":"","category":"PEGAMENTOS Y PISOS"},{"id":46,"name":"Revestimiento cocina","code":"","category":"PEGAMENTOS Y PISOS"},{"id":47,"name":"Revestimiento bano 2 par.","code":"","category":"PEGAMENTOS Y PISOS"},{"id":48,"name":"Piso interior","code":"","category":"PEGAMENTOS Y PISOS"},{"id":49,"name":"Piso exterior","code":"","category":"PEGAMENTOS Y PISOS"},{"id":50,"name":"Interior blanca","code":"","category":"PINTURAS"},{"id":51,"name":"General exterior 1","code":"","category":"PINTURAS"},{"id":52,"name":"Color fuerte ext.","code":"","category":"PINTURAS"},{"id":53,"name":"Fijadores","code":"","category":"PINTURAS"},{"id":54,"name":"Fijador fondo madera","code":"","category":"PINTURAS"},{"id":55,"name":"Techos (pintura)","code":"","category":"PINTURAS"},{"id":56,"name":"Masilla Durlock","code":"","category":"PINTURAS"},{"id":57,"name":"Bolsas Telgopor","code":"","category":"VARIOS"}];
-var CQ_CATALOGO_MATERIALES=[];
+// CQ 02/11/2026 — catálogo disponible de inmediato.
+// El botón "Agregar a Materiales" no espera Firebase para abrir; usa esta base
+// y refresca nombres/códigos/categorías en segundo plano.
+var CQ_CATALOGO_MATERIALES=CQ_BASE_CATALOGO_MATERIALES.map(function(x){return Object.assign({},x);}).sort(function(a,b){return a.name.localeCompare(b.name,'es');});
+var CQ_CATALOGO_MATERIALES_LOADING=null;
 var cqMaterialProducto={gd:null,gf:null};
 
 async function cqLoadCatalogoMateriales(){
-  var list=CQ_BASE_CATALOGO_MATERIALES.map(function(x){return Object.assign({},x);});
-  try{
-    if(window._cqFirebase){
-      var f=window._cqFirebase;
-      var snap=await f.getDoc(f.doc(f.db,'materiales','data_planilla_exacta_v4'));
-      if(snap.exists()){
-        var d=snap.data()||{},ren=d.matNombres||{},cod=d.matCodigos||{},cats=d.matCategorias||{},catRen=d.catRenames||{};
-        var deleted=(d.deletedMatIds||[]).map(Number);
-        list=list.filter(function(x){return deleted.indexOf(Number(x.id))<0;}).map(function(x){
-          if(ren[x.id]!=null)x.name=String(ren[x.id]);
-          if(cod[x.id]!=null)x.code=String(cod[x.id]);
-          if(cats[x.id]!=null)x.category=String(cats[x.id]);
-          if(catRen[x.category]!=null)x.category=String(catRen[x.category]);
-          return x;
-        });
-        (d.extraMats||[]).forEach(function(x){
-          if(deleted.indexOf(Number(x.id))>=0)return;
-          var item={id:x.id,name:String(ren[x.id]||x.mat||''),code:String(cod[x.id]||x.codigo||''),category:String(cats[x.id]||x.catName||'VARIOS')};
-          var idx=list.findIndex(function(y){return Number(y.id)===Number(item.id);});
-          if(idx>=0)list[idx]=item;else list.push(item);
-        });
+  if(CQ_CATALOGO_MATERIALES_LOADING)return CQ_CATALOGO_MATERIALES_LOADING;
+  CQ_CATALOGO_MATERIALES_LOADING=(async function(){
+    var list=CQ_BASE_CATALOGO_MATERIALES.map(function(x){return Object.assign({},x);});
+    try{
+      if(window._cqFirebase){
+        var f=window._cqFirebase;
+        var snap=await f.getDoc(f.doc(f.db,'materiales','data_planilla_exacta_v4'));
+        if(snap.exists()){
+          var d=snap.data()||{},ren=d.matNombres||{},cod=d.matCodigos||{},cats=d.matCategorias||{},catRen=d.catRenames||{};
+          var deleted=(d.deletedMatIds||[]).map(Number);
+          list=list.filter(function(x){return deleted.indexOf(Number(x.id))<0;}).map(function(x){
+            if(ren[x.id]!=null)x.name=String(ren[x.id]);
+            if(cod[x.id]!=null)x.code=String(cod[x.id]);
+            if(cats[x.id]!=null)x.category=String(cats[x.id]);
+            if(catRen[x.category]!=null)x.category=String(catRen[x.category]);
+            return x;
+          });
+          (d.extraMats||[]).forEach(function(x){
+            if(deleted.indexOf(Number(x.id))>=0)return;
+            var item={id:x.id,name:String(ren[x.id]||x.mat||''),code:String(cod[x.id]||x.codigo||''),category:String(cats[x.id]||x.catName||'VARIOS')};
+            var idx=list.findIndex(function(y){return Number(y.id)===Number(item.id);});
+            if(idx>=0)list[idx]=item;else list.push(item);
+          });
+        }
       }
-    }
-  }catch(e){console.warn('Catálogo Materiales',e);}
-  CQ_CATALOGO_MATERIALES=list.filter(function(x){return x.name;}).sort(function(a,b){return a.name.localeCompare(b.name,'es');});
-  return CQ_CATALOGO_MATERIALES;
+    }catch(e){console.warn('Catálogo Materiales',e);}
+    CQ_CATALOGO_MATERIALES=list.filter(function(x){return x.name;}).sort(function(a,b){return a.name.localeCompare(b.name,'es');});
+    return CQ_CATALOGO_MATERIALES;
+  })();
+  try{return await CQ_CATALOGO_MATERIALES_LOADING;}
+  finally{CQ_CATALOGO_MATERIALES_LOADING=null;}
 }
 function cqRenderCatalogoMateriales(){
   var box=document.getElementById('cq-mat-catalog-results');if(!box)return;
@@ -3956,6 +3965,10 @@ function cqRenderMaterialSeleccionado(){
   el.textContent=x?('✓ '+x.name+(x.code?' · '+x.code:'')):'Ningún producto seleccionado';
 }
 
+// Precarga silenciosa: normalmente cuando el usuario toque "Agregar a Materiales"
+// el catálogo real ya estará en memoria.
+document.addEventListener('cq-firebase-ready',function(){setTimeout(function(){cqLoadCatalogoMateriales().catch(function(){});},120);});
+setTimeout(function(){if(window._cqFirebase)cqLoadCatalogoMateriales().catch(function(){});},900);
 
 function cqActualizarBotonMateriales(prefix){
   var box=document.getElementById(prefix+'-materiales-action');
@@ -3977,14 +3990,8 @@ function cqActualizarBotonMateriales(prefix){
   }
 }
 async function cqAbrirCantidadMateriales(prefix){
-  // Las obras del vínculo a Materiales usan exactamente la lista actual de Gastos.
-  try{
-    await cqLoadGastosConfigFirebase(true);
-    cqRenderObrasDesdeGastos(prefix);
-  }catch(e){
-    console.warn('No se pudieron refrescar las obras de Gastos',e);
-  }
-
+  // CQ 02/11/2026 — apertura inmediata. Antes el botón esperaba dos lecturas
+  // de Firebase (obras + catálogo) ANTES de mostrar el modal.
   var rubro=document.getElementById(prefix+'-rubro').value||'';
   var subId=document.getElementById(prefix+'-subrubro').value||'';
   if(rubro!=='mat')return alert('Solo está disponible para el rubro Materiales.');
@@ -3997,6 +4004,7 @@ async function cqAbrirCantidadMateriales(prefix){
     var nombres=bloqueadasMat.map(function(id){var o=obrasTodas.find(function(x){return String(x.id)===String(id);});return (o&&o.label)||id;});
     return alert('No se puede enviar a Materiales: '+nombres.join(', ')+' tiene Materiales deshabilitado en Gastos. El gasto sí puede registrarse normalmente en Caja Gerencia.');
   }
+
   var obras=cqImputacionObras(ids),prev={};
   (cqMaterialesDraft[prefix]||[]).forEach(function(x){prev[x.obraId]=x.qty;});
   document.getElementById('cq-mat-modal-cantidades').innerHTML=ids.map(function(id){
@@ -4007,10 +4015,26 @@ async function cqAbrirCantidadMateriales(prefix){
   cqMaterialesModalPrefix=prefix;
   document.getElementById('cq-mat-catalog-search').value='';
   openModal('modal-cq-materiales-cantidad');
-  await cqLoadCatalogoMateriales();
+
+  // Mostrar YA el catálogo disponible (la base está precargada).
   cqRenderCatalogoMateriales();
   cqRenderMaterialSeleccionado();
-  setTimeout(function(){document.getElementById('cq-mat-catalog-search').focus();},50);
+  setTimeout(function(){var s=document.getElementById('cq-mat-catalog-search');if(s)s.focus();},30);
+
+  // Refrescar catálogo y obras sin bloquear el toque del usuario.
+  cqLoadCatalogoMateriales().then(function(){
+    var modal=document.getElementById('modal-cq-materiales-cantidad');
+    if(modal&&modal.classList.contains('open')&&cqMaterialesModalPrefix===prefix){
+      cqRenderCatalogoMateriales();
+      cqRenderMaterialSeleccionado();
+    }
+  }).catch(function(e){console.warn('No se pudo refrescar catálogo de Materiales',e);});
+
+  cqLoadGastosConfigFirebase(true).then(function(){
+    // Sólo refrescar la lista de obras del formulario principal; no tocar cantidades
+    // que el usuario ya pueda estar escribiendo dentro del modal.
+    cqRenderObrasDesdeGastos(prefix);
+  }).catch(function(e){console.warn('No se pudieron refrescar las obras de Gastos',e);});
 }
 function cqConfirmarCantidadMateriales(){
   var prefix=cqMaterialesModalPrefix;
@@ -4295,16 +4319,14 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
   // Así no existe una ventana donde Materiales pueda conservar sólo la primera obra.
   await cqCgMaterializarDirectoLote(payloads);
 
-  // 2) Respaldo/auditoría. Se publica después de confirmar el lote real.
-  // Materiales actual ignora estos eventos de Caja Gerencia como fuente activa.
-  for(var j=0;j<payloads.length;j++){
-    var payload=payloads[j];
-    try{
-      await f.setDoc(f.doc(f.db,'materiales_integraciones',payload.integrationId),payload);
-    }catch(e){
+  // 2) Respaldo/auditoría FUERA del camino crítico. La fuente real ya quedó
+  // confirmada por la transacción anterior; no hacer esperar el punto verde por
+  // varias escrituras secundarias de red.
+  payloads.forEach(function(payload){
+    f.setDoc(f.doc(f.db,'materiales_integraciones',payload.integrationId),payload).catch(function(e){
       console.warn('Respaldo materiales_integraciones no disponible',e);
-    }
-  }
+    });
+  });
 
   var matEstado=nuevas.length?'ok':'no';
   var matError=nuevas.length?'':'No se agregó a Materiales';
@@ -4312,7 +4334,9 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
   mov.materialesSyncEstado=matEstado;mov.materialesSyncError=matError;mov.materialesSyncAt=matAt;
   var movActualMat=cqCajaPatchMovimientoActual(mov.id,{materialesSyncEstado:matEstado,materialesSyncError:matError,materialesSyncAt:matAt});
   if(movActualMat){persist();renderCurrent();}
-  setTimeout(cqVerificarSincronizacionesMateriales,350);
+  // Darle tiempo al listener de Materiales para normalizar cualquier carga histórica
+  // y verificar usando identidad lógica (movimiento + obra), no sólo integrationId.
+  setTimeout(cqVerificarSincronizacionesMateriales,700);
 }
 function cqLanzarSyncMaterialesCaja(mov,oldMov){
   if(!mov)return;
@@ -4331,10 +4355,17 @@ function cqLanzarSyncMaterialesCaja(mov,oldMov){
 }
 async function cqEliminarVinculosMateriales(mov){
   // CQ 02/11/2026 — baja robusta Caja → Materiales.
-  // Al borrar TODO el movimiento de Caja, eliminar también TODAS sus cargas en Materiales
-  // por la identidad estable sourceMovementId. Esto cubre cargas históricas cuyo
-  // integrationId cambió o movimientos que ya no conservan materialesAgregar/cantidades.
+  // Optimización segura: no abrir una transacción de Materiales para movimientos que
+  // claramente nunca estuvieron vinculados. Los movimientos de Materiales actuales y
+  // legacy quedan cubiertos por rubro/cantidades/estado de sincronización.
   if(!mov||mov.id==null||!window._cqFirebase)return true;
+  var tieneVinculoMateriales=!!(
+    mov.materialesAgregar ||
+    mov.imputacionRubro==='mat' ||
+    (Array.isArray(mov.materialesCantidades)&&mov.materialesCantidades.length) ||
+    ['ok','pendiente','error'].indexOf(String(mov.materialesSyncEstado||''))>=0
+  );
+  if(!tieneVinculoMateriales)return true;
   var f=window._cqFirebase;
   var movId=String(mov.id);
   var prefijoIid='caja_'+movId+'_';
@@ -4396,34 +4427,25 @@ async function cqEliminarVinculosMateriales(mov){
       tx.set(ref,data);
     });
 
-    // Auditoría: desactivar también todos los documentos de integración conocidos.
-    // Materiales actual no los usa como fuente activa para Caja, pero así tampoco quedan verdes/activos históricos.
-    var ids=Object.keys(idsAuditoria);
-    for(var i=0;i<ids.length;i++){
-      var iid=ids[i];
-      try{
-        await f.setDoc(f.doc(f.db,'materiales_integraciones',iid),{
-          integrationId:iid,
-          source:'cq_caja_gerencia',
-          sourceLabel:'Caja Gerencia',
-          sourceMovementId:movId,
-          active:false,
-          deletedFromCajaGerencia:true,
-          deletedAt:new Date().toISOString()
-        },{merge:true});
-      }catch(eAudit){
-        console.warn('No se pudo desactivar auditoría de Materiales',iid,eAudit);
-      }
-    }
+    // La transacción anterior sólo resuelve cuando Firebase confirmó el commit de la
+    // planilla principal. No hace falta una segunda lectura de red para volver a comprobar
+    // exactamente el mismo documento.
 
-    // Confirmación real: no devolver OK mientras la planilla principal conserve una carga del movimiento.
-    var check=await f.getDoc(ref);
-    if(check.exists()){
-      var restantes=Array.isArray((check.data()||{}).cargas)?(check.data()||{}).cargas:[];
-      if(restantes.some(esCargaDeEsteMovimiento)){
-        throw new Error('Materiales todavía conserva una carga vinculada al movimiento '+movId);
-      }
-    }
+    // Auditoría secundaria FUERA del camino crítico: Materiales no usa estos documentos
+    // como fuente activa. Se actualizan en segundo plano sin hacer esperar el borrado visible.
+    Object.keys(idsAuditoria).forEach(function(iid){
+      f.setDoc(f.doc(f.db,'materiales_integraciones',iid),{
+        integrationId:iid,
+        source:'cq_caja_gerencia',
+        sourceLabel:'Caja Gerencia',
+        sourceMovementId:movId,
+        active:false,
+        deletedFromCajaGerencia:true,
+        deletedAt:new Date().toISOString()
+      },{merge:true}).catch(function(eAudit){
+        console.warn('No se pudo desactivar auditoría de Materiales',iid,eAudit);
+      });
+    });
     return true;
   }catch(e){
     console.warn('No se pudo eliminar vínculo con Materiales',e);
@@ -4466,6 +4488,20 @@ async function cqVerificarSincronizacionesMateriales(){
             var x=esperadas[i];
             var iid=cqMaterialesIntegrationId(m.id,x.obraId);
             var c=cargas.find(function(z){return String(z.integracionId||'')===String(iid);});
+            if(!c){
+              // Materiales considera estable sourceMovementId + obra aunque una versión
+              // anterior haya usado otro integrationId. Usar el mismo criterio evita
+              // falsos puntos rojos cuando la carga real sí existe.
+              var movId=String(m.id);
+              var obraKey=cqCgMatClaveObra(x.obra||x.obraId||'');
+              c=cargas.find(function(z){
+                if(!z||String(z.sourceMovementId||'')!==movId)return false;
+                var origen=String(z.origen||z.source||'').toLowerCase().replace(/[\s-]+/g,'_');
+                if(origen!=='caja_gerencia'&&origen!=='cq_caja_gerencia')return false;
+                var zk=cqCgMatClaveObra(z.obraNameOrigen||z.obraName||'');
+                return obraKey ? zk===obraKey : String(z.obraNameOrigen||z.obraName||'')===String(x.obra||'');
+              });
+            }
             if(!c){ok=false;err='La carga vinculada ya no existe en Materiales';break;}
             if(Math.abs((Number(c.qty)||0)-(Number(x.qty)||0))>0.0001){
               ok=false;err='La cantidad en Materiales no coincide';break;
