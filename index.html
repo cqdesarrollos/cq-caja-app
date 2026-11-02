@@ -649,10 +649,17 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 .cq-sub-opt{padding:8px 9px;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer}
 .cq-sub-opt:hover{background:#F1F7F3}
 @media(max-width:599px){
+  /* CQ 01/11/2026 v2 — Subrubro en teléfono: abrir SIEMPRE hacia arriba.
+     Evita que el listado quede debajo/superpuesto con el teclado de Android. */
   #modal-gasto-fondo .cq-sub-panel{
-    max-height:320px;
+    top:auto!important;
+    bottom:calc(100% + 6px)!important;
+    max-height:300px!important;
+    overflow-y:auto!important;
     overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;
+    z-index:1200!important;
+    box-shadow:0 -10px 28px rgba(28,61,53,.22);
   }
   #modal-gasto-fondo .cq-sub-opt{
     padding:9px 10px;
@@ -3782,38 +3789,9 @@ function cqSubRender(prefix,filtro){
   });
 }
 function cqSubMobileAcomodar(prefix){
-  // CQ 01/11/2026 — en Caja/Fondo y teléfono, subir el campo para aprovechar
-  // toda la zona visible por encima del teclado y mostrar más subrubros.
-  if(prefix!=='gf'||!window.matchMedia('(max-width:599px)').matches)return;
-  var search=document.getElementById(prefix+'-subrubro-search');
-  var panel=document.getElementById(prefix+'-subrubro-panel');
-  var modal=search&&search.closest('.modal');
-  if(!search||!panel||!modal)return;
-
-  function acomodar(){
-    if(!panel.classList.contains('open'))return;
-    var header=modal.querySelector('.modal-hd');
-    var mr=modal.getBoundingClientRect();
-    var ir=search.getBoundingClientRect();
-    var headerH=header?header.offsetHeight:0;
-    var topDeseado=mr.top+headerH+10;
-    var delta=ir.top-topDeseado;
-    if(Math.abs(delta)>2)modal.scrollTop+=delta;
-
-    // Ajustar el alto al viewport realmente visible (también cuando aparece teclado).
-    requestAnimationFrame(function(){
-      var r=search.getBoundingClientRect();
-      var vv=window.visualViewport;
-      var visibleBottom=vv?(vv.offsetTop+vv.height):window.innerHeight;
-      var disponible=Math.floor(visibleBottom-r.bottom-10);
-      panel.style.maxHeight=Math.max(90,Math.min(320,disponible))+'px';
-    });
-  }
-
-  // Primer acomodo inmediato y segundo cuando Android termina de mostrar teclado.
-  requestAnimationFrame(acomodar);
-  setTimeout(acomodar,120);
-  setTimeout(acomodar,320);
+  // CQ 01/11/2026 v2 — sin auto-scroll: Android acomoda el teclado y
+  // el panel abre por CSS hacia arriba, sin mover el modal.
+  return;
 }
 function cqSubOpen(prefix){
   cqSubRender(prefix,document.getElementById(prefix+'-subrubro-search').value);
