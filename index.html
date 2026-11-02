@@ -3318,17 +3318,7 @@ function renderReporte(rubroCambio){
       +'<div class="report-kpi"><small>'+(vals.tipo?'Total dólares':'Neto dólares')+'</small><b>'+fmtU(usd)+'</b></div>'
     +'</div>'
     +'<div class="filtro-total">'+f.length+' movimiento'+(f.length===1?'':'s')+(vals.tipo?'':' · Ingresos (+) · Gastos (−)')+'</div>';
-  document.getElementById('reporte-lista').innerHTML=f.length?'<div class="card">'+f.map(function(x){
-    var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');
-    var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');
-    var importePrincipal=x.moneda==='pesos'?fmtP(x.monto):fmtU(x.monto);
-    var equivalente='';
-    if(x.moneda==='pesos'){
-      var tcFila=Number(x.tc)||tcFallback||0;
-      equivalente=tcFila>0?'<div class="report-amount-usd">≈ '+fmtU((Number(x.monto)||0)/tcFila)+'</div>':'<div class="report-amount-usd report-amount-usd-na">TC no disponible</div>';
-    }
-    return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount-wrap"><div class="report-amount">'+importePrincipal+'</div>'+equivalente+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>';
-  }).join('')+'</div>':'<div class="card"><div class="empty">No hay movimientos para estos filtros.</div></div>';
+  document.getElementById('reporte-lista').innerHTML=f.length?'<div class="card">'+f.map(function(x){var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount">'+(x.moneda==='pesos'?fmtP(x.monto)+'<span class="report-amount-usd">≈ '+(((Number(x.tc)||tcFallback||0)>0)?fmtU((Number(x.monto)||0)/(Number(x.tc)||tcFallback||0)):'Sin TC')+'</span>':fmtU(x.monto))+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>'}).join('')+'</div>':'<div class="card"><div class="empty">No hay movimientos para estos filtros.</div></div>';
 }
 function limpiarReporte(){['rep-tipo','rep-moneda','rep-mes','rep-obra','rep-rubro','rep-subrubro'].forEach(function(id){var e=document.getElementById(id);if(e)e.value=''});renderReporte();}
 
@@ -4807,79 +4797,19 @@ function cqLanzarSyncMovimiento(mov,contexto,oldMov){
   });
 }
 async function cqEliminarVinculosGastos(mov){
-  if(!mov||mov.id==null)return true;
-  var f=window._cqFirebase;
-  if(!f||!f.runTransaction||!f.getDoc){
-    console.warn('No se pudo eliminar vínculo con Gastos: Firebase no disponible');
-    return false;
-  }
-
-  // Para una baja NO hacemos una transacción gigante con todas las obras.
-  // Limpiamos únicamente las obras realmente vinculadas al movimiento y verificamos cada una.
-  var obraIds=[];
-  (Array.isArray(mov.imputaciones)?mov.imputaciones:[]).forEach(function(imp){
-    var id=imp&&imp.obraId!=null?String(imp.obraId):'';
-    if(id&&!obraIds.includes(id))obraIds.push(id);
-  });
-  // Compatibilidad con cargas de Oficina antiguas/incompletas. Revisar Oficina es inocuo
-  // porque el filtro usa el ID único del movimiento de Caja.
-  if(!obraIds.includes('oficina'))obraIds.push('oficina');
-
-  var sid=String(mov.id);
-  async function limpiarObra(obraId){
-    var ref=f.doc(f.db,'gastos',obraId);
-    var linkId=cqGastosLinkId(mov.id,obraId);
-
-    async function ejecutar(){
-      await f.runTransaction(f.db,async function(tx){
-        var snap=await tx.get(ref);
-        if(!snap.exists())return;
-        var data=snap.data()||{};
-        var arr=Array.isArray(data.gastos)?data.gastos.slice():[];
-        var limpia=arr.filter(function(g){
-          if(!g)return false;
-          if(String(g.id||'')===String(linkId))return false;
-          if(String(g.cajaMovimientoId||'')===sid)return false;
-          if(String(g.cajaGerenciaMovimientoId||'')===sid)return false;
-          return true;
-        });
-        if(limpia.length===arr.length)return;
-        data.gastos=limpia;
-        data.updatedAt=new Date().toISOString();
-        tx.set(ref,data);
-      });
-    }
-
-    async function siguePresente(){
-      var snap=await f.getDoc(ref);
-      if(!snap.exists())return false;
-      var arr=Array.isArray((snap.data()||{}).gastos)?snap.data().gastos:[];
-      return arr.some(function(g){
-        if(!g)return false;
-        return String(g.id||'')===String(linkId)
-          ||String(g.cajaMovimientoId||'')===sid
-          ||String(g.cajaGerenciaMovimientoId||'')===sid;
-      });
-    }
-
-    await ejecutar();
-    if(await siguePresente()){
-      // Un reintento explícito por si hubo una escritura simultánea en la planilla Gastos.
-      await new Promise(function(r){setTimeout(r,120);});
-      await ejecutar();
-      if(await siguePresente())throw new Error('Gastos no confirmó la baja en '+obraId);
-    }
-  }
-
+  if(!mov||!Array.isArray(mov.imputaciones)||!mov.imputaciones.length)return true;
   try{
-    for(var i=0;i<obraIds.length;i++)await limpiarObra(obraIds[i]);
+    for(var i=0;i<mov.imputaciones.length;i++){
+      var imp=mov.imputaciones[i];
+      await cqUpsertGastoObra(imp.obraId,cqGastoPayloadCaja(mov,imp,'Caja'),true);
+    }
     return true;
   }catch(e){
     console.warn('No se pudo eliminar vínculo con Gastos',e);
+    toast('No se pudo eliminar el vínculo en Gastos. Caja no se borró.');
     return false;
   }
 }
-
 function cqSyncDotHTML(mov){
   var st=(mov&&mov.gastosSyncEstado)||'error';
   var cls=st==='ok'?'ok':(st==='pendiente'?'wait':'');
@@ -6292,121 +6222,43 @@ async function guardarIngreso(){
   persist();renderFondo(ingTipo);
   if(!huboError&&(movSync.ingresoGastosAgregar||movSync.ingresoFinAgregar))toast('✓ Ingreso sincronizado');
 }
-async function cqBorrarCajaConfirmado(tipo,mov){
-  if(!mov||mov.id==null)throw new Error('Movimiento inválido');
-  var cfg=fondoConfig(tipo);
-  var key=cfg&&cfg.movs;
-  if(!key)throw new Error('Cuenta de Caja inválida');
-  if(!window._cqFirebase||!window._cqFirebase.getDoc)throw new Error('Firebase no disponible');
-
-  var sid=String(mov.id);
-
-  // 1) Terminar cualquier guardado anterior para que una foto vieja no pueda reinsertar el gasto.
-  clearTimeout(saveTimer);
-  if(firebaseSavePromise)await firebaseSavePromise;
-
-  // 2) Baja LOCAL primero. Es el mismo mecanismo que usa Caja para cualquier cambio:
-  // persist -> journal -> rebase multi-dispositivo -> saveToFirebase.
-  DB[key]=(DB[key]||[]).filter(function(x){return String(x&&x.id)!==sid;});
-  if(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio')cqBorrarIngresosCambio(mov.id);
-  persist('Se eliminó un movimiento en '+labelFondo(tipo));
-  renderFondo(tipo);
-
-  // No esperar el debounce: confirmar esta baja ahora.
-  clearTimeout(saveTimer);
-  var ok=await saveToFirebase();
-  if(!ok)throw new Error('Caja no pudo guardar la baja');
-
-  async function leerRemoto(){
-    var f=window._cqFirebase;
-    var ref=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
-    var snap=await f.getDoc(ref);
-    if(!snap.exists()||!snap.data()||!snap.data().db)throw new Error('CAJA_REMOTA_INVALIDA');
-    return {raw:snap.data(),db:cqCajaSnapshotDB(snap.data().db)};
-  }
-  function existeEn(rem){
-    return (rem.db[key]||[]).some(function(x){return String(x&&x.id)===sid;});
-  }
-
-  // 3) Verificación real por ID. Sólo damos por borrado cuando Firebase ya no lo contiene.
-  var rem=await leerRemoto();
-  if(existeEn(rem)){
-    console.warn('Caja: primer guardado no confirmó la baja; reintentando',sid);
-
-    // Adoptar esta lectura como base y volver a expresar exactamente la misma baja.
-    cqCajaLastRemoteDB=cqCajaSnapshotDB(rem.db);
-    lastRemoteUpdatedAt=rem.raw.updatedAt||lastRemoteUpdatedAt;
-    lastRemoteRevision=Number(rem.raw.revision)||lastRemoteRevision;
-    DB=cqCajaRebaseLocalSobreRemoto(rem.db,DB,rem.db);
-    DB[key]=(DB[key]||[]).filter(function(x){return String(x&&x.id)!==sid;});
-    cqCajaLocalRevision++;
-    cqCajaLocalDirty=true;
-    localStorage.setItem(DB_KEY,JSON.stringify(DB));
-    cqCajaGuardarPendienteSeguro();
-    clearTimeout(saveTimer);
-    ok=await saveToFirebase();
-    if(!ok)throw new Error('Caja no pudo confirmar la baja en el segundo intento');
-    rem=await leerRemoto();
-    if(existeEn(rem))throw new Error('Caja sigue conteniendo el movimiento después de dos intentos');
-  }
-
-  // saveToFirebase ya adopta la versión remota confirmada. Asegurar la pantalla final.
-  DB[key]=(DB[key]||[]).filter(function(x){return String(x&&x.id)!==sid;});
-  localStorage.setItem(DB_KEY,JSON.stringify(DB));
-  renderFondo(tipo);
-  return true;
-}
-
 async function borrarFondoMov(tipo,id){
   var cfg=fondoConfig(tipo);
   var lista=DB[cfg.movs]||[];
-  var mov=lista.find(function(x){return String(x&&x.id)===String(id);});
+  var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+cfg.fmt(mov.monto)) : 'este movimiento';
-  if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
+  if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
 
-  // Copia inmutable: después de borrar Caja, seguimos pudiendo limpiar sus vínculos externos.
-  var copia=JSON.parse(JSON.stringify(mov));
-
-  // PRIMERO confirmar la baja de Caja. Nunca más borrar Gastos dejando Caja viva.
-  try{
-    await cqBorrarCajaConfirmado(tipo,copia);
-  }catch(e){
-    console.warn('No se pudo confirmar la baja en Caja',e);
-    renderFondo(tipo);
-    toast('No se pudo borrar de Caja. No se tocaron los vínculos externos.');
-    return;
+  // Primero limpiar vínculos externos. Si falla alguno, conservar Caja intacta.
+  if(mov.tipo==='ingreso'){
+    var okIng=await cqEliminarIngresoIntegraciones(mov,tipo);
+    if(!okIng)return;
+  }else if((tipo==='fondo-pesos'||tipo==='santander')){
+    var okG=await cqEliminarVinculosGastos(mov);
+    if(!okG)return;
+    var okM=await cqEliminarVinculosMateriales(mov);
+    if(!okM){
+      // Si Materiales falla después de limpiar Gastos, reconstruir Gastos para no dejar estados partidos.
+      try{await cqSyncMovimientoGastos(mov,labelFondo(tipo),null);}catch(_e){}
+      return;
+    }
+  }
+  if(tipo==='fondo-pesos'&&mov.cajaChicaIngreso){
+    try{await cqEliminarIngresoCajaChicaDesdeFondo(mov);}catch(e){
+      console.warn('No se pudo eliminar vínculo con Caja Chica',e);
+      toast('No se pudo eliminar el vínculo en Caja Chica. Caja no se borró.');
+      return;
+    }
   }
 
-  var errores=[];
-
-  if(copia.tipo==='ingreso'){
-    try{
-      var okIng=await cqEliminarIngresoIntegraciones(copia,tipo);
-      if(!okIng)errores.push('integraciones del ingreso');
-    }catch(e){console.warn('Baja integraciones ingreso',e);errores.push('integraciones del ingreso');}
-  }else if(tipo==='fondo-pesos'||tipo==='santander'){
-    // Gastos se limpia por obra, con relectura de confirmación. No bloqueamos la baja de Caja.
-    var okG=await cqEliminarVinculosGastos(copia);
-    if(!okG)errores.push('Gastos');
-
-    try{
-      var okM=await cqEliminarVinculosMateriales(copia);
-      if(!okM)errores.push('Materiales/Pañol');
-    }catch(e){console.warn('Baja Materiales/Pañol',e);errores.push('Materiales/Pañol');}
-  }
-
-  if(tipo==='fondo-pesos'&&copia.cajaChicaIngreso){
-    try{await cqEliminarIngresoCajaChicaDesdeFondo(copia);}catch(e){console.warn('Baja Caja Chica',e);errores.push('Caja Chica');}
-  }
-
+  DB[cfg.movs]=(DB[cfg.movs]||[]).filter(function(x){return x.id!==id;});
+  if(mov&&(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'))cqBorrarIngresosCambio(mov.id);
+  persist('Se eliminó un movimiento en '+labelFondo(tipo));
+  var okCaja=await cqConfirmarCajaAntesDeIntegrar();
+  if(!okCaja){toast('El movimiento quedó pendiente de sincronizar en Caja');renderFondo(tipo);return;}
+  toast('Eliminado');
   renderFondo(tipo);
-  renderActividad();
-  if(errores.length){
-    toast('✓ Borrado de Caja · pendiente limpiar '+errores.join(', '));
-  }else{
-    toast(copia.tipo==='ingreso'?'✓ Eliminado':'✓ Eliminado de Caja y Gastos');
-  }
 }
 
 // ═══════════════════════════════════════════
@@ -7133,15 +6985,7 @@ changeUser.addEventListener("click",async()=>{
       ?'<div class="card">'+f.map(function(x){
           var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');
           var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');
-          var importePrincipal=(x.moneda==='pesos'?fmtP(x.monto):fmtU(x.monto));
-          var equivalente='';
-          if(x.moneda==='pesos'){
-            var tcFila=Number(x.tc)||Number(getLastTC())||0;
-            equivalente=tcFila>0
-              ?'<div class="report-amount-usd">≈ '+fmtU((Number(x.monto)||0)/tcFila)+'</div>'
-              :'<div class="report-amount-usd report-amount-usd-na">TC no disponible</div>';
-          }
-          return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount-wrap"><div class="report-amount">'+importePrincipal+'</div>'+equivalente+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>';
+          return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount">'+(x.moneda==='pesos'?fmtP(x.monto)+'<span class="report-amount-usd">≈ '+(((Number(x.tc)||tcFallback||0)>0)?fmtU((Number(x.monto)||0)/(Number(x.tc)||tcFallback||0)):'Sin TC')+'</span>':fmtU(x.monto))+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>';
         }).join('')+'</div>'
       :'<div class="card"><div class="empty">No hay movimientos para estos filtros.</div></div>';
   };
@@ -7968,97 +7812,6 @@ changeUser.addEventListener("click",async()=>{
 </script>
 
 
-<style id="cq-caja-ajustes-finales-01112026">
-/* CQ 01/11/2026 — modal de carga móvil: Guardar siempre visible y formato normal entra sin scroll. */
-@media (max-width:599px){
-  #modal-gasto-fondo{
-    padding:3px!important;
-    align-items:center!important;
-    justify-content:center!important;
-    overflow:hidden!important;
-  }
-  #modal-gasto-fondo .modal{
-    width:min(98vw,460px)!important;
-    max-width:98vw!important;
-    height:calc(100dvh - 6px)!important;
-    max-height:calc(100dvh - 6px)!important;
-    margin:auto!important;
-    display:flex!important;
-    flex-direction:column!important;
-    overflow:hidden!important;
-  }
-  #modal-gasto-fondo .modal-hd{
-    position:relative!important;
-    flex:0 0 auto!important;
-    min-height:40px!important;
-    padding:7px 13px 6px!important;
-  }
-  #modal-gasto-fondo .modal-ttl{font-size:14px!important}
-  #modal-gasto-fondo .mbody{
-    flex:1 1 auto!important;
-    min-height:0!important;
-    overflow-y:auto!important;
-    overflow-x:hidden!important;
-    padding:5px 10px 3px!important;
-    -webkit-overflow-scrolling:touch!important;
-  }
-  #modal-gasto-fondo .fld{margin-bottom:4px!important}
-  #modal-gasto-fondo .fld label{margin-bottom:2px!important;font-size:8px!important}
-  #modal-gasto-fondo .fld input,
-  #modal-gasto-fondo .fld select,
-  #modal-gasto-fondo .fld textarea,
-  #modal-gasto-fondo .cq-sub-search{
-    min-height:34px!important;
-    height:34px!important;
-    padding:5px 8px!important;
-    font-size:11.4px!important;
-  }
-  #modal-gasto-fondo input[type="date"]{height:34px!important}
-  #modal-gasto-fondo .imputacion-box{margin-top:5px!important;padding:6px!important}
-  #modal-gasto-fondo .imputacion-title{margin-bottom:4px!important;font-size:9.3px!important}
-  #modal-gasto-fondo .cq-add-gastos-row{
-    min-height:38px!important;
-    padding:5px 8px!important;
-    margin-bottom:4px!important;
-  }
-  #modal-gasto-fondo .cq-add-gastos-copy b{font-size:9px!important}
-  #modal-gasto-fondo .cq-add-gastos-copy small{font-size:7px!important;line-height:1.05!important}
-  #modal-gasto-fondo #gf-obras.obra-multi{gap:4px!important;margin-top:3px!important}
-  #modal-gasto-fondo #gf-obras .obra-multi-btn{
-    min-height:29px!important;
-    height:29px!important;
-    padding:2px 4px!important;
-    font-size:8.15px!important;
-    line-height:1.03!important;
-  }
-  #modal-gasto-fondo #gf-comentario{
-    min-height:32px!important;
-    height:32px!important;
-    padding-top:5px!important;
-    padding-bottom:5px!important;
-  }
-  #modal-gasto-fondo .cq-materiales-action{margin-top:2px!important;padding:4px 6px!important;min-height:30px!important}
-  #modal-gasto-fondo #gf-reparto.reparto-wrap{gap:2px!important;margin-top:2px!important}
-  #modal-gasto-fondo #gf-reparto .reparto-row{min-height:24px!important}
-  #modal-gasto-fondo #gf-reparto-total{margin-top:2px!important}
-  #modal-gasto-fondo .mfooter{
-    position:relative!important;
-    flex:0 0 auto!important;
-    z-index:40!important;
-    min-height:42px!important;
-    padding:5px 10px 6px!important;
-    background:#fff!important;
-    border-top:1px solid #EEF4EE!important;
-    box-shadow:0 -4px 12px rgba(28,61,53,.06)!important;
-  }
-  #modal-gasto-fondo .mfooter .btn{min-height:31px!important;padding:6px 12px!important;font-size:9.6px!important}
-}
-
-/* Reporte: equivalente en dólares por cada movimiento en pesos. */
-.report-amount-wrap{text-align:right;white-space:nowrap}
-.report-amount-usd{margin-top:2px;font-family:var(--mono);font-size:9px;font-weight:700;color:#7A8D83}
-.report-amount-usd-na{font-size:8px;color:#A5AEA8}
-</style>
 
 <!-- CQ 01/11/2026 — Subrubro móvil: TODO el campo funciona como la flecha -->
 <style id="cq-mobile-subrubro-whole-field-click-v1">
@@ -8103,6 +7856,109 @@ changeUser.addEventListener("click",async()=>{
   if(document.readyState!=='loading')setTimeout(wireWholeSubrubroField,0);
 })();
 </script>
+
+
+
+<!-- CQ 02/11/2026 — SOLO 2 ajustes sobre base estable:
+     1) Modal de gasto móvil con Guardar siempre dentro de pantalla.
+     2) Equivalente u$s visible en cada movimiento en pesos del Reporte. -->
+<style id="cq-caja-solo-dos-ajustes-v1">
+/* Reporte: equivalente en dólares debajo del importe ARS */
+.report-amount-usd{
+  display:block;
+  margin-top:2px;
+  font-family:var(--mono);
+  font-size:9px;
+  line-height:1.1;
+  font-weight:700;
+  color:#8A9A8E;
+  white-space:nowrap;
+}
+
+/* Teléfono: el modal ocupa el viewport disponible y el pie no participa del scroll. */
+@media (max-width:599px){
+  #modal-gasto-fondo{
+    padding:3px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
+  }
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:calc(100dvh - 6px)!important;
+    max-height:calc(100dvh - 6px)!important;
+    margin:auto!important;
+    display:flex!important;
+    flex-direction:column!important;
+    overflow:hidden!important;
+    border-radius:14px!important;
+  }
+  #modal-gasto-fondo .modal-hd{
+    position:relative!important;
+    top:auto!important;
+    flex:0 0 auto!important;
+    min-height:40px!important;
+    padding:8px 13px 7px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{
+    font-size:13.8px!important;
+    line-height:1.05!important;
+  }
+  #modal-gasto-fondo .mbody{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    padding:6px 10px 4px!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:4px!important}
+  #modal-gasto-fondo .fld label{margin-bottom:2px!important;font-size:7.9px!important;line-height:1!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    min-height:31px!important;
+    height:31px!important;
+    padding:5px 8px!important;
+    font-size:11px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:31px!important}
+  #modal-gasto-fondo .imputacion-box{margin-top:5px!important;padding:6px!important;border-radius:10px!important}
+  #modal-gasto-fondo .imputacion-title{margin-bottom:4px!important;font-size:9px!important;line-height:1!important}
+  #modal-gasto-fondo .imputacion-title small{font-size:7px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{min-height:37px!important;padding:5px 7px!important;margin-bottom:4px!important}
+  #modal-gasto-fondo .cq-add-gastos-copy b{font-size:9px!important;line-height:1!important}
+  #modal-gasto-fondo .cq-add-gastos-copy small{font-size:7px!important;line-height:1.05!important;margin-top:1px!important}
+  #modal-gasto-fondo #gf-obras.obra-multi{gap:4px!important;margin-top:3px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{min-height:28px!important;height:28px!important;padding:2px 3px!important;font-size:8.1px!important;line-height:1.02!important}
+  #modal-gasto-fondo #gf-comentario{min-height:31px!important;height:31px!important;padding-top:5px!important;padding-bottom:5px!important}
+  #modal-gasto-fondo .cq-materiales-action{margin-top:3px!important;padding:4px 6px!important;min-height:32px!important}
+  #modal-gasto-fondo #gf-reparto.reparto-wrap{gap:3px!important;margin-top:3px!important}
+  #modal-gasto-fondo #gf-reparto .reparto-row{min-height:24px!important;padding:2px 3px!important}
+  #modal-gasto-fondo #gf-reparto-total{margin-top:2px!important}
+
+  /* Guardar/Cancelar quedan siempre visibles dentro de la pantalla. */
+  #modal-gasto-fondo .mfooter{
+    position:relative!important;
+    flex:0 0 auto!important;
+    z-index:20!important;
+    min-height:39px!important;
+    padding:5px 10px 6px!important;
+    gap:6px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:0 -4px 12px rgba(28,61,53,.05)!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{
+    min-height:29px!important;
+    padding:5px 11px!important;
+    font-size:9.4px!important;
+  }
+}
+</style>
 
 </body>
 </html>
