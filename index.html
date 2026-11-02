@@ -7811,5 +7811,51 @@ changeUser.addEventListener("click",async()=>{
 })();
 </script>
 
+
+
+<!-- CQ 01/11/2026 — Subrubro móvil: TODO el campo funciona como la flecha -->
+<style id="cq-mobile-subrubro-whole-field-click-v1">
+@media (max-width:599px){
+  #modal-gasto-fondo .cq-sub-combo{
+    cursor:pointer!important;
+    touch-action:manipulation;
+  }
+  /* Evita que Android trate el input como campo editable/foco: el toque lo recibe el contenedor. */
+  #modal-gasto-fondo #gf-subrubro-search,
+  #modal-gasto-fondo .cq-sub-combo .cq-sub-btn{
+    pointer-events:none!important;
+  }
+}
+</style>
+<script id="cq-mobile-subrubro-whole-field-click-v1-js">
+(function(){
+  function isMobile(){
+    return window.matchMedia && window.matchMedia('(max-width:599px)').matches;
+  }
+
+  function wireWholeSubrubroField(){
+    var combo=document.querySelector('#modal-gasto-fondo .cq-sub-combo');
+    var field=document.getElementById('gf-subrubro-search');
+    if(!combo || !field || combo.dataset.cqWholeSubWired==='1')return;
+
+    combo.dataset.cqWholeSubWired='1';
+
+    combo.addEventListener('click',function(e){
+      if(!isMobile())return;
+      if(e.target && e.target.closest && e.target.closest('.cq-sub-panel'))return;
+      e.preventDefault();
+      e.stopPropagation();
+      field.blur();
+      if(typeof window.cqMobileSubrubroOpen==='function'){
+        window.cqMobileSubrubroOpen();
+      }
+    },true);
+  }
+
+  document.addEventListener('DOMContentLoaded',wireWholeSubrubroField);
+  if(document.readyState!=='loading')setTimeout(wireWholeSubrubroField,0);
+})();
+</script>
+
 </body>
 </html>
