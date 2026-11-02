@@ -7547,5 +7547,258 @@ changeUser.addEventListener("click",async()=>{
 })();
 </script>
 
+
+
+<!-- CQ 01/11/2026 · variante SIN TECLADO: selector móvil de Subrubro a pantalla completa -->
+<style id="cq-mobile-subrubro-sheet-no-keyboard">
+@media (max-width:599px){
+  #cq-mobile-sub-sheet{
+    display:none;
+    position:fixed;
+    inset:0;
+    width:100vw;
+    height:100dvh;
+    z-index:99999;
+    background:#fff;
+    flex-direction:column;
+    overflow:hidden;
+    overscroll-behavior:contain;
+  }
+  #cq-mobile-sub-sheet.open{display:flex!important}
+  #cq-mobile-sub-sheet .cq-ms-hd{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    min-height:58px;
+    padding:10px 14px;
+    background:#fff;
+    border-bottom:1px solid #E4E8E4;
+    box-shadow:0 2px 10px rgba(28,61,53,.06);
+  }
+  #cq-mobile-sub-sheet .cq-ms-title-wrap{min-width:0}
+  #cq-mobile-sub-sheet .cq-ms-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:17px;
+    line-height:1.08;
+    font-weight:850;
+    color:#1C3D35;
+  }
+  #cq-mobile-sub-sheet .cq-ms-subtitle{
+    margin-top:3px;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:10.5px;
+    line-height:1.15;
+    font-weight:650;
+    color:#8BA095;
+  }
+  #cq-mobile-sub-sheet .cq-ms-close{
+    width:38px;
+    height:38px;
+    flex:0 0 38px;
+    border:0;
+    border-radius:10px;
+    background:#F1F4F1;
+    color:#5F766A;
+    font-size:23px;
+    line-height:1;
+    cursor:pointer;
+  }
+  #cq-mobile-sub-sheet .cq-ms-list{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding:6px 10px max(18px,env(safe-area-inset-bottom));
+    background:#fff;
+  }
+  #cq-mobile-sub-sheet .cq-ms-opt{
+    display:flex;
+    align-items:center;
+    min-height:46px;
+    padding:9px 12px;
+    border-bottom:1px solid #EEF1EE;
+    border-radius:8px;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    line-height:1.2;
+    font-weight:750;
+    color:#24382E;
+    cursor:pointer;
+  }
+  #cq-mobile-sub-sheet .cq-ms-opt:active{background:#EEF7F1}
+  #cq-mobile-sub-sheet .cq-ms-opt.selected{
+    background:#EEF7F1;
+    color:#1C6B4E;
+  }
+  #cq-mobile-sub-sheet .cq-ms-empty{
+    padding:28px 14px;
+    text-align:center;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:13px;
+    font-weight:650;
+    color:#8BA095;
+  }
+  /* El campo original es solo un lanzador. Nunca abre el teclado. */
+  #modal-gasto-fondo #gf-subrubro-search[readonly]{
+    cursor:pointer!important;
+    caret-color:transparent!important;
+  }
+}
+</style>
+
+<script id="cq-mobile-subrubro-sheet-no-keyboard-js">
+(function(){
+  function isMobile(){ return window.matchMedia && window.matchMedia('(max-width:599px)').matches; }
+  var sheet=null, list=null;
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>\"']/g,function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function ensureSheet(){
+    if(sheet && document.body.contains(sheet))return sheet;
+    sheet=document.createElement('div');
+    sheet.id='cq-mobile-sub-sheet';
+    sheet.setAttribute('aria-hidden','true');
+    sheet.innerHTML=''
+      +'<div class="cq-ms-hd">'
+      +  '<div class="cq-ms-title-wrap">'
+      +    '<div class="cq-ms-title">Seleccionar subrubro</div>'
+      +    '<div class="cq-ms-subtitle">Todos los subrubros · tocá uno para elegir</div>'
+      +  '</div>'
+      +  '<button type="button" class="cq-ms-close" aria-label="Cerrar">×</button>'
+      +'</div>'
+      +'<div class="cq-ms-list"></div>';
+    document.body.appendChild(sheet);
+    list=sheet.querySelector('.cq-ms-list');
+    sheet.querySelector('.cq-ms-close').onclick=closeSheet;
+    return sheet;
+  }
+
+  function fitVisualViewport(){
+    if(!sheet || !sheet.classList.contains('open'))return;
+    var vv=window.visualViewport;
+    if(vv){
+      sheet.style.top=Math.max(0,vv.offsetTop||0)+'px';
+      sheet.style.left=Math.max(0,vv.offsetLeft||0)+'px';
+      sheet.style.width=Math.max(1,vv.width||window.innerWidth)+'px';
+      sheet.style.height=Math.max(1,vv.height||window.innerHeight)+'px';
+    }else{
+      sheet.style.top='0px';
+      sheet.style.left='0px';
+      sheet.style.width='100vw';
+      sheet.style.height='100dvh';
+    }
+  }
+
+  function render(){
+    ensureSheet();
+    var arr=(window._cqSubArr && window._cqSubArr.gf) || [];
+    var current=(document.getElementById('gf-subrubro')||{}).value||'';
+    if(!arr.length){
+      list.innerHTML='<div class="cq-ms-empty">No hay subrubros disponibles.</div>';
+      return;
+    }
+    list.innerHTML=arr.map(function(x){
+      var sel=String(x.id)===String(current)?' selected':'';
+      return '<div class="cq-ms-opt'+sel+'" data-id="'+esc(x.id)+'" data-label="'+esc(x.label)+'">'+esc(x.label)+'</div>';
+    }).join('');
+    list.querySelectorAll('.cq-ms-opt').forEach(function(el){
+      el.onclick=function(){
+        var hid=document.getElementById('gf-subrubro');
+        var vis=document.getElementById('gf-subrubro-search');
+        if(hid)hid.value=el.dataset.id||'';
+        if(vis)vis.value=el.dataset.label||'';
+        var oldPanel=document.getElementById('gf-subrubro-panel');
+        if(oldPanel)oldPanel.classList.remove('open');
+        if(typeof window.cqActualizarBotonMateriales==='function')window.cqActualizarBotonMateriales('gf');
+        closeSheet();
+      };
+    });
+  }
+
+  function openSheet(){
+    if(!isMobile())return false;
+    ensureSheet();
+    var original=document.getElementById('gf-subrubro-search');
+    if(original)original.blur();
+    var oldPanel=document.getElementById('gf-subrubro-panel');
+    if(oldPanel)oldPanel.classList.remove('open');
+    render();
+    sheet.classList.add('open');
+    sheet.setAttribute('aria-hidden','false');
+    document.documentElement.classList.add('cq-sub-sheet-open');
+    fitVisualViewport();
+    requestAnimationFrame(function(){
+      fitVisualViewport();
+      if(!list)return;
+      var selected=list.querySelector('.cq-ms-opt.selected');
+      if(selected){
+        var target=Math.max(0,selected.offsetTop-list.clientHeight*0.28);
+        list.scrollTop=target;
+      }else{
+        list.scrollTop=0;
+      }
+    });
+    return true;
+  }
+
+  function closeSheet(){
+    if(!sheet)return;
+    sheet.classList.remove('open');
+    sheet.setAttribute('aria-hidden','true');
+    sheet.style.top='';
+    sheet.style.left='';
+    sheet.style.width='';
+    sheet.style.height='';
+    document.documentElement.classList.remove('cq-sub-sheet-open');
+  }
+
+  function wire(){
+    var field=document.getElementById('gf-subrubro-search');
+    var btn=document.querySelector('#modal-gasto-fondo .cq-sub-combo .cq-sub-btn');
+    if(!field)return;
+    if(isMobile()){
+      field.readOnly=true;
+      field.setAttribute('inputmode','none');
+      field.setAttribute('autocomplete','off');
+      field.onfocus=function(){ openSheet(); };
+      field.onclick=function(e){ e.preventDefault(); openSheet(); };
+      field.onpointerdown=function(e){ e.preventDefault(); openSheet(); };
+      if(btn){
+        btn.onclick=function(e){ e.preventDefault(); e.stopPropagation(); openSheet(); };
+      }
+    }else{
+      field.readOnly=false;
+      field.removeAttribute('inputmode');
+    }
+  }
+
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',fitVisualViewport);
+    window.visualViewport.addEventListener('scroll',fitVisualViewport);
+  }
+  window.addEventListener('resize',function(){ wire(); fitVisualViewport(); });
+  document.addEventListener('DOMContentLoaded',wire);
+  if(document.readyState!=='loading')setTimeout(wire,0);
+
+  var obs=new MutationObserver(function(){
+    var m=document.getElementById('modal-gasto-fondo');
+    if(m && !m.classList.contains('open'))closeSheet();
+  });
+  setTimeout(function(){
+    var m=document.getElementById('modal-gasto-fondo');
+    if(m)obs.observe(m,{attributes:true,attributeFilter:['class']});
+  },0);
+
+  window.cqMobileSubrubroOpen=openSheet;
+  window.cqMobileSubrubroClose=closeSheet;
+})();
+</script>
+
 </body>
 </html>
