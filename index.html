@@ -648,6 +648,17 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 .cq-sub-panel.open{display:block}
 .cq-sub-opt{padding:8px 9px;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer}
 .cq-sub-opt:hover{background:#F1F7F3}
+@media(max-width:599px){
+  #modal-gasto-fondo .cq-sub-panel{
+    max-height:320px;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+  #modal-gasto-fondo .cq-sub-opt{
+    padding:9px 10px;
+    font-size:11.5px;
+  }
+}
 .cq-materiales-action{display:none;margin-top:9px;border:1px solid #C8DCF8;background:#F0F6FF;border-radius:10px;padding:10px;align-items:center;justify-content:space-between;gap:10px}
 .cq-materiales-action.show{display:flex}
 .cq-materiales-action b{font-size:11.5px;color:#1F5FAF}
@@ -3039,7 +3050,19 @@ function fmtU(n){return 'u$s '+fmtN(n,2);}
 function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtFecha(iso){if(!iso)return '';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2200);}
-function openModal(id){document.getElementById(id).classList.add('open');}
+function openModal(id){
+  var bg=document.getElementById(id);
+  if(!bg)return;
+  bg.classList.add('open');
+  // CQ 01/11/2026 — cada modal abre desde arriba; evita conservar scroll previo.
+  if(id==='modal-gasto-fondo'){
+    var modal=bg.querySelector('.modal');
+    if(modal){
+      modal.scrollTop=0;
+      requestAnimationFrame(function(){modal.scrollTop=0;});
+    }
+  }
+}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
 // ═══════════════════════════════════════════
@@ -3758,10 +3781,45 @@ function cqSubRender(prefix,filtro){
     };
   });
 }
+function cqSubMobileAcomodar(prefix){
+  // CQ 01/11/2026 — en Caja/Fondo y teléfono, subir el campo para aprovechar
+  // toda la zona visible por encima del teclado y mostrar más subrubros.
+  if(prefix!=='gf'||!window.matchMedia('(max-width:599px)').matches)return;
+  var search=document.getElementById(prefix+'-subrubro-search');
+  var panel=document.getElementById(prefix+'-subrubro-panel');
+  var modal=search&&search.closest('.modal');
+  if(!search||!panel||!modal)return;
+
+  function acomodar(){
+    if(!panel.classList.contains('open'))return;
+    var header=modal.querySelector('.modal-hd');
+    var mr=modal.getBoundingClientRect();
+    var ir=search.getBoundingClientRect();
+    var headerH=header?header.offsetHeight:0;
+    var topDeseado=mr.top+headerH+10;
+    var delta=ir.top-topDeseado;
+    if(Math.abs(delta)>2)modal.scrollTop+=delta;
+
+    // Ajustar el alto al viewport realmente visible (también cuando aparece teclado).
+    requestAnimationFrame(function(){
+      var r=search.getBoundingClientRect();
+      var vv=window.visualViewport;
+      var visibleBottom=vv?(vv.offsetTop+vv.height):window.innerHeight;
+      var disponible=Math.floor(visibleBottom-r.bottom-10);
+      panel.style.maxHeight=Math.max(90,Math.min(320,disponible))+'px';
+    });
+  }
+
+  // Primer acomodo inmediato y segundo cuando Android termina de mostrar teclado.
+  requestAnimationFrame(acomodar);
+  setTimeout(acomodar,120);
+  setTimeout(acomodar,320);
+}
 function cqSubOpen(prefix){
   cqSubRender(prefix,document.getElementById(prefix+'-subrubro-search').value);
   document.querySelectorAll('.cq-sub-panel.open').forEach(function(p){p.classList.remove('open');});
   document.getElementById(prefix+'-subrubro-panel').classList.add('open');
+  cqSubMobileAcomodar(prefix);
 }
 function cqSubFilter(prefix){
   var val=document.getElementById(prefix+'-subrubro-search').value;
