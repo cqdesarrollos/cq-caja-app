@@ -7549,13 +7549,14 @@ changeUser.addEventListener("click",async()=>{
 
 
 
-<!-- CQ 01/11/2026 · variante SIN TECLADO: selector móvil de Subrubro a pantalla completa -->
-<style id="cq-mobile-subrubro-sheet-no-keyboard">
+<!-- CQ 01/11/2026 v3 · selector móvil de Subrubro en capa propia -->
+<style id="cq-mobile-subrubro-sheet-v3">
 @media (max-width:599px){
   #cq-mobile-sub-sheet{
     display:none;
     position:fixed;
-    inset:0;
+    left:0;
+    top:0;
     width:100vw;
     height:100dvh;
     z-index:99999;
@@ -7571,27 +7572,18 @@ changeUser.addEventListener("click",async()=>{
     align-items:center;
     justify-content:space-between;
     gap:10px;
-    min-height:58px;
+    min-height:54px;
     padding:10px 14px;
     background:#fff;
     border-bottom:1px solid #E4E8E4;
     box-shadow:0 2px 10px rgba(28,61,53,.06);
   }
-  #cq-mobile-sub-sheet .cq-ms-title-wrap{min-width:0}
   #cq-mobile-sub-sheet .cq-ms-title{
     font-family:'Space Grotesk',sans-serif;
     font-size:17px;
-    line-height:1.08;
+    line-height:1.1;
     font-weight:850;
     color:#1C3D35;
-  }
-  #cq-mobile-sub-sheet .cq-ms-subtitle{
-    margin-top:3px;
-    font-family:'Space Grotesk',sans-serif;
-    font-size:10.5px;
-    line-height:1.15;
-    font-weight:650;
-    color:#8BA095;
   }
   #cq-mobile-sub-sheet .cq-ms-close{
     width:38px;
@@ -7605,6 +7597,36 @@ changeUser.addEventListener("click",async()=>{
     line-height:1;
     cursor:pointer;
   }
+  #cq-mobile-sub-sheet .cq-ms-search-wrap{
+    flex:0 0 auto;
+    padding:10px 12px 8px;
+    background:#fff;
+    border-bottom:1px solid #EEF1EE;
+  }
+  #cq-mobile-sub-sheet .cq-ms-search{
+    width:100%;
+    height:44px;
+    border:1.5px solid #9CC7B3;
+    border-radius:11px;
+    background:#F8FAF8;
+    padding:0 12px;
+    outline:none;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    font-weight:650;
+    color:#1C3D35;
+  }
+  #cq-mobile-sub-sheet .cq-ms-search:focus{
+    border-color:#2E7D5E;
+    background:#fff;
+  }
+  #cq-mobile-sub-sheet .cq-ms-hint{
+    margin-top:5px;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:10.5px;
+    font-weight:650;
+    color:#8BA095;
+  }
   #cq-mobile-sub-sheet .cq-ms-list{
     flex:1 1 auto;
     min-height:0;
@@ -7616,8 +7638,8 @@ changeUser.addEventListener("click",async()=>{
   #cq-mobile-sub-sheet .cq-ms-opt{
     display:flex;
     align-items:center;
-    min-height:46px;
-    padding:9px 12px;
+    min-height:48px;
+    padding:10px 12px;
     border-bottom:1px solid #EEF1EE;
     border-radius:8px;
     font-family:'Space Grotesk',sans-serif;
@@ -7628,10 +7650,6 @@ changeUser.addEventListener("click",async()=>{
     cursor:pointer;
   }
   #cq-mobile-sub-sheet .cq-ms-opt:active{background:#EEF7F1}
-  #cq-mobile-sub-sheet .cq-ms-opt.selected{
-    background:#EEF7F1;
-    color:#1C6B4E;
-  }
   #cq-mobile-sub-sheet .cq-ms-empty{
     padding:28px 14px;
     text-align:center;
@@ -7640,7 +7658,7 @@ changeUser.addEventListener("click",async()=>{
     font-weight:650;
     color:#8BA095;
   }
-  /* El campo original es solo un lanzador. Nunca abre el teclado. */
+  /* El campo original actúa como lanzador: no invoca teclado al primer toque. */
   #modal-gasto-fondo #gf-subrubro-search[readonly]{
     cursor:pointer!important;
     caret-color:transparent!important;
@@ -7648,10 +7666,10 @@ changeUser.addEventListener("click",async()=>{
 }
 </style>
 
-<script id="cq-mobile-subrubro-sheet-no-keyboard-js">
+<script id="cq-mobile-subrubro-sheet-v3-js">
 (function(){
   function isMobile(){ return window.matchMedia && window.matchMedia('(max-width:599px)').matches; }
-  var sheet=null, list=null;
+  var sheet=null, search=null, list=null;
 
   function esc(s){
     return String(s==null?'':s).replace(/[&<>\"']/g,function(c){
@@ -7666,16 +7684,22 @@ changeUser.addEventListener("click",async()=>{
     sheet.setAttribute('aria-hidden','true');
     sheet.innerHTML=''
       +'<div class="cq-ms-hd">'
-      +  '<div class="cq-ms-title-wrap">'
-      +    '<div class="cq-ms-title">Seleccionar subrubro</div>'
-      +    '<div class="cq-ms-subtitle">Todos los subrubros · tocá uno para elegir</div>'
-      +  '</div>'
+      +  '<div class="cq-ms-title">Seleccionar subrubro</div>'
       +  '<button type="button" class="cq-ms-close" aria-label="Cerrar">×</button>'
+      +'</div>'
+      +'<div class="cq-ms-search-wrap">'
+      +  '<input type="search" class="cq-ms-search" placeholder="Buscar subrubro..." autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search">'
+      +  '<div class="cq-ms-hint">Tocá una opción o usá el buscador.</div>'
       +'</div>'
       +'<div class="cq-ms-list"></div>';
     document.body.appendChild(sheet);
+    search=sheet.querySelector('.cq-ms-search');
     list=sheet.querySelector('.cq-ms-list');
     sheet.querySelector('.cq-ms-close').onclick=closeSheet;
+    search.addEventListener('input',function(){ render(search.value); });
+    sheet.addEventListener('touchmove',function(e){
+      if(!e.target.closest('.cq-ms-list')) e.stopPropagation();
+    },{passive:true});
     return sheet;
   }
 
@@ -7688,24 +7712,18 @@ changeUser.addEventListener("click",async()=>{
       sheet.style.width=Math.max(1,vv.width||window.innerWidth)+'px';
       sheet.style.height=Math.max(1,vv.height||window.innerHeight)+'px';
     }else{
-      sheet.style.top='0px';
-      sheet.style.left='0px';
-      sheet.style.width='100vw';
-      sheet.style.height='100dvh';
+      sheet.style.top='0px';sheet.style.left='0px';sheet.style.width='100vw';sheet.style.height='100dvh';
     }
   }
 
-  function render(){
+  function render(q){
     ensureSheet();
     var arr=(window._cqSubArr && window._cqSubArr.gf) || [];
-    var current=(document.getElementById('gf-subrubro')||{}).value||'';
-    if(!arr.length){
-      list.innerHTML='<div class="cq-ms-empty">No hay subrubros disponibles.</div>';
-      return;
-    }
-    list.innerHTML=arr.map(function(x){
-      var sel=String(x.id)===String(current)?' selected':'';
-      return '<div class="cq-ms-opt'+sel+'" data-id="'+esc(x.id)+'" data-label="'+esc(x.label)+'">'+esc(x.label)+'</div>';
+    var s=String(q||'').trim().toLowerCase();
+    var fil=arr.filter(function(x){ return !s || String(x.label||'').toLowerCase().includes(s); });
+    if(!fil.length){ list.innerHTML='<div class="cq-ms-empty">Sin resultados</div>'; return; }
+    list.innerHTML=fil.map(function(x){
+      return '<div class="cq-ms-opt" data-id="'+esc(x.id)+'" data-label="'+esc(x.label)+'">'+esc(x.label)+'</div>';
     }).join('');
     list.querySelectorAll('.cq-ms-opt').forEach(function(el){
       el.onclick=function(){
@@ -7725,36 +7743,29 @@ changeUser.addEventListener("click",async()=>{
     if(!isMobile())return false;
     ensureSheet();
     var original=document.getElementById('gf-subrubro-search');
-    if(original)original.blur();
+    if(original){ original.blur(); }
     var oldPanel=document.getElementById('gf-subrubro-panel');
     if(oldPanel)oldPanel.classList.remove('open');
-    render();
+    search.value='';
+    render('');
     sheet.classList.add('open');
     sheet.setAttribute('aria-hidden','false');
     document.documentElement.classList.add('cq-sub-sheet-open');
     fitVisualViewport();
+    // No enfocar el buscador: al abrir se ve la lista completa y no aparece el teclado.
     requestAnimationFrame(function(){
       fitVisualViewport();
-      if(!list)return;
-      var selected=list.querySelector('.cq-ms-opt.selected');
-      if(selected){
-        var target=Math.max(0,selected.offsetTop-list.clientHeight*0.28);
-        list.scrollTop=target;
-      }else{
-        list.scrollTop=0;
-      }
+      if(list)list.scrollTop=0;
     });
     return true;
   }
 
   function closeSheet(){
     if(!sheet)return;
+    if(document.activeElement===search)search.blur();
     sheet.classList.remove('open');
     sheet.setAttribute('aria-hidden','true');
-    sheet.style.top='';
-    sheet.style.left='';
-    sheet.style.width='';
-    sheet.style.height='';
+    sheet.style.top='';sheet.style.left='';sheet.style.width='';sheet.style.height='';
     document.documentElement.classList.remove('cq-sub-sheet-open');
   }
 
@@ -7765,7 +7776,6 @@ changeUser.addEventListener("click",async()=>{
     if(isMobile()){
       field.readOnly=true;
       field.setAttribute('inputmode','none');
-      field.setAttribute('autocomplete','off');
       field.onfocus=function(){ openSheet(); };
       field.onclick=function(e){ e.preventDefault(); openSheet(); };
       field.onpointerdown=function(e){ e.preventDefault(); openSheet(); };
@@ -7786,6 +7796,7 @@ changeUser.addEventListener("click",async()=>{
   document.addEventListener('DOMContentLoaded',wire);
   if(document.readyState!=='loading')setTimeout(wire,0);
 
+  // Si por cualquier motivo se cierra el modal de gasto, cerrar también la capa de subrubro.
   var obs=new MutationObserver(function(){
     var m=document.getElementById('modal-gasto-fondo');
     if(m && !m.classList.contains('open'))closeSheet();
