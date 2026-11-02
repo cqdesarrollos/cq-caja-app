@@ -6279,43 +6279,187 @@ async function guardarIngreso(){
   persist();renderFondo(ingTipo);
   if(!huboError&&(movSync.ingresoGastosAgregar||movSync.ingresoFinAgregar))toast('✓ Ingreso sincronizado');
 }
+async function cqBorrarCajaYGastosAtomico(tipo,mov){
+  if(!mov||mov.id==null)throw new Error('Movimiento inválido');
+  if(!window._cqFirebase||!window._cqFirebase.runTransaction)throw new Error('Firebase no disponible');
+
+  // Barrera: primero terminar cualquier escritura anterior de Caja.
+  clearTimeout(saveTimer);
+  if(firebaseSavePromise)await firebaseSavePromise;
+  if(cqCajaLocalDirty){
+    var previoOk=await saveToFirebase();
+    if(!previoOk)throw new Error('No se pudieron confirmar cambios previos de Caja');
+  }
+  clearTimeout(saveTimer);
+
+  var f=window._cqFirebase;
+  var cfg=fondoConfig(tipo);
+  var key=cfg&&cfg.movs;
+  if(!key)throw new Error('Cuenta de Caja inválida');
+
+  var sid=String(mov.id);
+  var cajaRef=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
+
+  // En pesos, revisar TODAS las obras habilitadas de Gastos. Es una baja poco frecuente
+  // y esto permite limpiar también vínculos históricos cuya imputación local haya quedado incompleta.
+  var obraIds=[];
+  if(tipo==='fondo-pesos'||tipo==='santander'){
+    try{
+      (cqImputacionObras()||[]).forEach(function(o){
+        var id=o&&o.id!=null?String(o.id):'';
+        if(id&&!obraIds.includes(id))obraIds.push(id);
+      });
+      // Incluir también obras archivadas/deshabilitadas de la configuración, porque un
+      // gasto histórico puede seguir viviendo allí aunque ya no aparezca en el selector.
+      var cfgG=cqGastosConfigActualCG?cqGastosConfigActualCG():null;
+      (cfgG&&Array.isArray(cfgG.obras)?cfgG.obras:[]).forEach(function(o){
+        var id=o&&o.id!=null?String(o.id):'';
+        if(id&&!obraIds.includes(id))obraIds.push(id);
+      });
+    }catch(_e){}
+    (Array.isArray(mov.imputaciones)?mov.imputaciones:[]).forEach(function(i){
+      var id=i&&i.obraId!=null?String(i.obraId):'';
+      if(id&&!obraIds.includes(id))obraIds.push(id);
+    });
+  }
+
+  if((tipo==='fondo-pesos'||tipo==='santander')&&!obraIds.includes('oficina'))obraIds.push('oficina');
+
+  var gastoRefs=obraIds.map(function(id){return {id:id,ref:f.doc(f.db,'gastos',id)};});
+  var resultado=null;
+
+  await f.runTransaction(f.db,async function(tx){
+    // Firestore exige hacer todas las lecturas antes de comenzar a escribir.
+    var cajaSnap=await tx.get(cajaRef);
+    if(!cajaSnap.exists()||!cajaSnap.data()||!cajaSnap.data().db)throw new Error('CAJA_REMOTA_INVALIDA');
+
+    var gastoSnaps=[];
+    for(var r=0;r<gastoRefs.length;r++) gastoSnaps.push(await tx.get(gastoRefs[r].ref));
+
+    var raw=cajaSnap.data()||{};
+    var dbRem=cqCajaSnapshotDB(raw.db);
+    var antes=(dbRem[key]||[]).length;
+    dbRem[key]=(dbRem[key]||[]).filter(function(x){return String(x&&x.id)!==sid;});
+    if((dbRem[key]||[]).length===antes){
+      // Si otro dispositivo ya lo borró, igualmente continuamos limpiando cualquier vínculo huérfano en Gastos.
+      console.warn('Caja: el movimiento ya no estaba en remoto al confirmar la baja',sid);
+    }
+
+    if(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'){
+      ['fondoPesosMovs','santanderMovs'].forEach(function(k){
+        dbRem[k]=(dbRem[k]||[]).filter(function(x){return String(x&&x.cambioOrigenId||'')!==sid;});
+      });
+    }
+
+    var now=new Date().toISOString();
+    dbRem.activity=Array.isArray(dbRem.activity)?dbRem.activity:[];
+    dbRem.activity.unshift({id:Date.now(),text:'Se eliminó un movimiento en '+labelFondo(tipo),at:now});
+    dbRem.activity=dbRem.activity.slice(0,30);
+
+    // Preparar las bajas de Gastos por ID moderno Y por vínculo estructurado histórico.
+    var gastosWrites=[];
+    for(var i=0;i<gastoRefs.length;i++){
+      var snap=gastoSnaps[i];
+      if(!snap.exists())continue;
+      var data=snap.data()||{};
+      var arr=Array.isArray(data.gastos)?data.gastos.slice():[];
+      var obraId=gastoRefs[i].id;
+      var linkId=cqGastosLinkId(mov.id,obraId);
+      var limpia=arr.filter(function(g){
+        if(!g)return false;
+        if(String(g.id||'')===String(linkId))return false;
+        if(String(g.cajaMovimientoId||'')===sid)return false;
+        if(String(g.cajaGerenciaMovimientoId||'')===sid)return false;
+        return true;
+      });
+      if(limpia.length!==arr.length){
+        data.gastos=limpia;
+        data.updatedAt=now;
+        gastosWrites.push({ref:gastoRefs[i].ref,data:data});
+      }
+    }
+
+    var updatedAt=now;
+    var revision=(Number(raw.revision)||0)+1;
+    resultado={db:sanitizeDB(dbRem),updatedAt:updatedAt,revision:revision};
+
+    // A partir de acá, sólo escrituras: Caja + Gastos quedan en UNA MISMA transacción.
+    tx.set(cajaRef,{db:resultado.db,updatedAt:updatedAt,revision:revision,lastActivity:'Se eliminó un movimiento en '+labelFondo(tipo)});
+    gastosWrites.forEach(function(w){tx.set(w.ref,w.data);});
+  });
+
+  if(!resultado)throw new Error('Firebase no confirmó la baja');
+
+  // Adoptar exactamente lo confirmado remotamente y neutralizar journals viejos.
+  DB=cqCajaSnapshotDB(resultado.db);
+  cqCajaLastRemoteDB=cqCajaSnapshotDB(resultado.db);
+  lastRemoteUpdatedAt=resultado.updatedAt;
+  lastRemoteRevision=Number(resultado.revision)||lastRemoteRevision;
+  cqCajaLocalRevision++;
+  cqCajaLocalDirty=false;
+  pendingActivity=null;
+  cqCajaDeferredRemote=null;
+  suppressRemoteUntil=Date.now()+500;
+  localStorage.setItem(DB_KEY,JSON.stringify(DB));
+  cqCajaLimpiarPendienteSeguro();
+  setSyncStatus('Sync: ON');
+  return true;
+}
+
 async function borrarFondoMov(tipo,id){
   var cfg=fondoConfig(tipo);
   var lista=DB[cfg.movs]||[];
-  var mov=lista.find(function(x){return x.id===id;});
+  var mov=lista.find(function(x){return String(x&&x.id)===String(id);});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+cfg.fmt(mov.monto)) : 'este movimiento';
   if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
 
-  // Primero limpiar vínculos externos. Si falla alguno, conservar Caja intacta.
+  // Ingresos conservan su flujo de integraciones específico.
   if(mov.tipo==='ingreso'){
     var okIng=await cqEliminarIngresoIntegraciones(mov,tipo);
     if(!okIng)return;
-  }else if((tipo==='fondo-pesos'||tipo==='santander')){
-    var okG=await cqEliminarVinculosGastos(mov);
-    if(!okG)return;
-    var okM=await cqEliminarVinculosMateriales(mov);
-    if(!okM){
-      // Si Materiales falla después de limpiar Gastos, reconstruir Gastos para no dejar estados partidos.
-      try{await cqSyncMovimientoGastos(mov,labelFondo(tipo),null);}catch(_e){}
-      return;
+    try{
+      await cqBorrarCajaYGastosAtomico(tipo,mov);
+      renderFondo(tipo);renderActividad();toast('✓ Eliminado');
+    }catch(e){
+      console.warn('Borrado de ingreso en Caja',e);
+      toast('No se pudo confirmar la baja en Caja.');
     }
+    return;
+  }
+
+  // Antes del commit atómico Caja+Gastos, limpiar integraciones auxiliares.
+  // Si fallan, Caja y Gastos todavía no se tocaron.
+  var auxiliaresBorrados=false;
+  var teniaCajaChica=!!mov.cajaChicaIngreso;
+  if(tipo==='fondo-pesos'||tipo==='santander'){
+    var okM=await cqEliminarVinculosMateriales(mov);
+    if(!okM)return;
+    auxiliaresBorrados=true;
   }
   if(tipo==='fondo-pesos'&&mov.cajaChicaIngreso){
     try{await cqEliminarIngresoCajaChicaDesdeFondo(mov);}catch(e){
+      if(auxiliaresBorrados){try{cqLanzarSyncMaterialesCaja(mov,null);}catch(_e){}}
       console.warn('No se pudo eliminar vínculo con Caja Chica',e);
       toast('No se pudo eliminar el vínculo en Caja Chica. Caja no se borró.');
       return;
     }
   }
 
-  DB[cfg.movs]=(DB[cfg.movs]||[]).filter(function(x){return x.id!==id;});
-  if(mov&&(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'))cqBorrarIngresosCambio(mov.id);
-  persist('Se eliminó un movimiento en '+labelFondo(tipo));
-  var okCaja=await cqConfirmarCajaAntesDeIntegrar();
-  if(!okCaja){toast('El movimiento quedó pendiente de sincronizar en Caja');renderFondo(tipo);return;}
-  toast('Eliminado');
-  renderFondo(tipo);
+  try{
+    // Este commit borra Caja y Gastos juntos. No puede quedar uno borrado y el otro no.
+    await cqBorrarCajaYGastosAtomico(tipo,mov);
+    renderFondo(tipo);
+    renderActividad();
+    toast('✓ Eliminado de Caja y Gastos');
+  }catch(e){
+    console.warn('Borrado atómico Caja + Gastos',e);
+    // Caja y Gastos no se modificaron si la transacción falló. Restaurar auxiliares en segundo plano.
+    if(auxiliaresBorrados){try{cqLanzarSyncMaterialesCaja(mov,null);}catch(_e2){}}
+    if(teniaCajaChica){try{await cqSyncIngresoCajaChicaDesdeFondo(mov,true);}catch(_e3){}}
+    renderFondo(tipo);
+    toast('No se pudo borrar. Caja y Gastos quedaron sin cambios.');
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -7969,204 +8113,47 @@ changeUser.addEventListener("click",async()=>{
 .report-amount-usd-na{font-size:8px;color:#A5AEA8}
 </style>
 
-
-<script id="cq-caja-3-fixes-final-02112026">
+<!-- CQ 01/11/2026 — Subrubro móvil: TODO el campo funciona como la flecha -->
+<style id="cq-mobile-subrubro-whole-field-click-v1">
+@media (max-width:599px){
+  #modal-gasto-fondo .cq-sub-combo{
+    cursor:pointer!important;
+    touch-action:manipulation;
+  }
+  /* Evita que Android trate el input como campo editable/foco: el toque lo recibe el contenedor. */
+  #modal-gasto-fondo #gf-subrubro-search,
+  #modal-gasto-fondo .cq-sub-combo .cq-sub-btn{
+    pointer-events:none!important;
+  }
+}
+</style>
+<script id="cq-mobile-subrubro-whole-field-click-v1-js">
 (function(){
-  /* 1) SUBRUBRO MÓVIL:
-     Toda la caja (campo + flecha) es una sola zona táctil.
-     Capturamos pointerdown antes de que el input pueda enfocar o ejecutar handlers viejos. */
-  function cqWireWholeSubrubro(){
-    if(!(window.matchMedia&&window.matchMedia('(max-width:599px)').matches))return;
+  function isMobile(){
+    return window.matchMedia && window.matchMedia('(max-width:599px)').matches;
+  }
+
+  function wireWholeSubrubroField(){
     var combo=document.querySelector('#modal-gasto-fondo .cq-sub-combo');
     var field=document.getElementById('gf-subrubro-search');
-    if(!combo||!field)return;
+    if(!combo || !field || combo.dataset.cqWholeSubWired==='1')return;
 
-    field.readOnly=true;
-    field.setAttribute('inputmode','none');
-    field.setAttribute('aria-haspopup','dialog');
-    combo.style.cursor='pointer';
+    combo.dataset.cqWholeSubWired='1';
 
-    if(combo.dataset.cqWholeTap==='1')return;
-    combo.dataset.cqWholeTap='1';
-
-    combo.addEventListener('pointerdown',function(e){
-      if(e.target&&e.target.closest&&e.target.closest('.cq-sub-panel'))return;
+    combo.addEventListener('click',function(e){
+      if(!isMobile())return;
+      if(e.target && e.target.closest && e.target.closest('.cq-sub-panel'))return;
       e.preventDefault();
       e.stopPropagation();
-      if(e.stopImmediatePropagation)e.stopImmediatePropagation();
+      field.blur();
       if(typeof window.cqMobileSubrubroOpen==='function'){
         window.cqMobileSubrubroOpen();
-      }else if(typeof window.cqSubToggle==='function'){
-        window.cqSubToggle('gf');
       }
     },true);
   }
 
-  document.addEventListener('DOMContentLoaded',cqWireWholeSubrubro);
-  window.addEventListener('resize',cqWireWholeSubrubro);
-  if(document.readyState!=='loading')setTimeout(cqWireWholeSubrubro,0);
-
-  /* 3) BORRADO CAJA:
-     La baja final de Caja se hace en una transacción DIRECTA sobre el documento remoto,
-     por ID, y luego se reemplaza la copia local por el estado remoto confirmado.
-     Así no puede quedar "borrado en Gastos pero todavía en Caja" por una carrera del save general. */
-  async function cqBorrarCajaRemotoConfirmado(tipo,mov){
-    if(!mov||mov.id==null)throw new Error('Movimiento inválido');
-    if(!window._cqFirebase||!window._cqFirebase.runTransaction)throw new Error('Firebase no disponible');
-
-    // Cerrar cualquier guardado anterior antes de borrar. Así una escritura vieja
-    // nunca puede terminar después y reintroducir el movimiento recién eliminado.
-    clearTimeout(saveTimer);
-    if(firebaseSavePromise)await firebaseSavePromise;
-    if(cqCajaLocalDirty){
-      var preOk=await saveToFirebase();
-      if(!preOk)throw new Error('No se pudieron confirmar cambios previos de Caja');
-    }
-    clearTimeout(saveTimer);
-
-    var cfg=fondoConfig(tipo);
-    var key=cfg&&cfg.movs;
-    if(!key)throw new Error('Cuenta de Caja inválida');
-
-    var f=window._cqFirebase;
-    var ref=f.doc(f.db,FIRESTORE_COLLECTION,FIRESTORE_DOC_ID);
-    var resultado=null;
-
-    await f.runTransaction(f.db,async function(tx){
-      var snap=await tx.get(ref);
-      if(!snap.exists()||!snap.data()||!snap.data().db)throw new Error('CAJA_REMOTA_INVALIDA');
-
-      var raw=snap.data()||{};
-      var dbRem=cqCajaSnapshotDB(raw.db);
-      var sid=String(mov.id);
-
-      dbRem[key]=(dbRem[key]||[]).filter(function(x){return String(x&&x.id)!==sid;});
-
-      // Si era un cambio/conversión, quitar también las contrapartidas generadas en pesos.
-      if(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'){
-        ['fondoPesosMovs','santanderMovs'].forEach(function(k){
-          dbRem[k]=(dbRem[k]||[]).filter(function(x){
-            return String(x&&x.cambioOrigenId||'')!==sid;
-          });
-        });
-      }
-
-      dbRem.activity=Array.isArray(dbRem.activity)?dbRem.activity:[];
-      dbRem.activity.unshift({
-        id:Date.now(),
-        text:'Se eliminó un movimiento en '+labelFondo(tipo),
-        at:new Date().toISOString()
-      });
-      dbRem.activity=dbRem.activity.slice(0,30);
-
-      var nuevoUpdatedAt=new Date().toISOString();
-      var nuevaRevision=(Number(raw.revision)||0)+1;
-      resultado={
-        db:sanitizeDB(dbRem),
-        updatedAt:nuevoUpdatedAt,
-        revision:nuevaRevision
-      };
-
-      tx.set(ref,{
-        db:resultado.db,
-        updatedAt:nuevoUpdatedAt,
-        revision:nuevaRevision,
-        lastActivity:'Se eliminó un movimiento en '+labelFondo(tipo)
-      });
-    });
-
-    if(!resultado)throw new Error('No se confirmó la baja en Caja');
-
-    // Adoptar exactamente el estado remoto confirmado para que ningún journal viejo reintroduzca el gasto.
-    DB=cqCajaSnapshotDB(resultado.db);
-    cqCajaLastRemoteDB=cqCajaSnapshotDB(resultado.db);
-    lastRemoteUpdatedAt=resultado.updatedAt;
-    lastRemoteRevision=Number(resultado.revision)||lastRemoteRevision;
-    cqCajaLocalRevision++;
-    cqCajaLocalDirty=false;
-    pendingActivity=null;
-    suppressRemoteUntil=Date.now()+350;
-    localStorage.setItem(DB_KEY,JSON.stringify(DB));
-    cqCajaLimpiarPendienteSeguro();
-    setSyncStatus('Sync: ON');
-    return true;
-  }
-
-  window.borrarFondoMov=async function(tipo,id){
-    var cfg=fondoConfig(tipo);
-    var lista=DB[cfg.movs]||[];
-    var mov=lista.find(function(x){return String(x&&x.id)===String(id);});
-    var detalle=mov ? ((mov.desc||'Movimiento')+' · '+cfg.fmt(mov.monto)) : 'este movimiento';
-
-    if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.'))return;
-    if(!mov)return;
-
-    var gastosBorrados=false;
-    var materialesBorrados=false;
-
-    try{
-      // Primero limpiar integraciones. Caja todavía existe y permite rollback si algo falla.
-      if(mov.tipo==='ingreso'){
-        var okIng=await cqEliminarIngresoIntegraciones(mov,tipo);
-        if(!okIng)return;
-      }else if(tipo==='fondo-pesos'||tipo==='santander'){
-        var okG=await cqEliminarVinculosGastos(mov);
-        if(!okG)return;
-        gastosBorrados=true;
-
-        var okM=await cqEliminarVinculosMateriales(mov);
-        if(!okM){
-          if(gastosBorrados){
-            try{await cqSyncMovimientoGastos(mov,labelFondo(tipo),null);}catch(_e){}
-          }
-          return;
-        }
-        materialesBorrados=true;
-      }
-
-      if(tipo==='fondo-pesos'&&mov.cajaChicaIngreso){
-        try{
-          await cqEliminarIngresoCajaChicaDesdeFondo(mov);
-        }catch(e){
-          if(gastosBorrados){
-            try{await cqSyncMovimientoGastos(mov,labelFondo(tipo),null);}catch(_e){}
-          }
-          if(materialesBorrados){
-            try{cqLanzarSyncMaterialesCaja(mov,null);}catch(_e2){}
-          }
-          console.warn('No se pudo eliminar vínculo con Caja Chica',e);
-          toast('No se pudo eliminar el vínculo en Caja Chica. Caja no se borró.');
-          return;
-        }
-      }
-
-      // Baja de Caja directamente en Firebase y confirmada dentro de la transacción.
-      await cqBorrarCajaRemotoConfirmado(tipo,mov);
-
-      renderFondo(tipo);
-      renderActividad();
-      toast('✓ Eliminado de Caja y vínculos');
-    }catch(e){
-      console.warn('Borrado Caja confirmado',e);
-
-      // Si la baja remota de Caja falla después de limpiar integraciones, reconstruirlas.
-      if(gastosBorrados){
-        try{await cqSyncMovimientoGastos(mov,labelFondo(tipo),null);}catch(_e){}
-      }
-      if(materialesBorrados){
-        try{cqLanzarSyncMaterialesCaja(mov,null);}catch(_e2){}
-      }
-
-      // Volver a mostrar el movimiento local: Caja nunca se considera borrada sin confirmación remota.
-      var localCfg=fondoConfig(tipo);
-      if(!(DB[localCfg.movs]||[]).some(function(x){return String(x&&x.id)===String(mov.id);})){
-        DB[localCfg.movs]=(DB[localCfg.movs]||[]).concat([mov]);
-        localStorage.setItem(DB_KEY,JSON.stringify(DB));
-      }
-      renderFondo(tipo);
-      toast('No se pudo confirmar la baja en Caja. No se dejó un borrado parcial.');
-    }
-  };
+  document.addEventListener('DOMContentLoaded',wireWholeSubrubroField);
+  if(document.readyState!=='loading')setTimeout(wireWholeSubrubroField,0);
 })();
 </script>
 
