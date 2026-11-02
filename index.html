@@ -3318,7 +3318,17 @@ function renderReporte(rubroCambio){
       +'<div class="report-kpi"><small>'+(vals.tipo?'Total dólares':'Neto dólares')+'</small><b>'+fmtU(usd)+'</b></div>'
     +'</div>'
     +'<div class="filtro-total">'+f.length+' movimiento'+(f.length===1?'':'s')+(vals.tipo?'':' · Ingresos (+) · Gastos (−)')+'</div>';
-  document.getElementById('reporte-lista').innerHTML=f.length?'<div class="card">'+f.map(function(x){var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount">'+(x.moneda==='pesos'?fmtP(x.monto):fmtU(x.monto))+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>'}).join('')+'</div>':'<div class="card"><div class="empty">No hay movimientos para estos filtros.</div></div>';
+  document.getElementById('reporte-lista').innerHTML=f.length?'<div class="card">'+f.map(function(x){
+    var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');
+    var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');
+    var importePrincipal=x.moneda==='pesos'?fmtP(x.monto):fmtU(x.monto);
+    var equivalente='';
+    if(x.moneda==='pesos'){
+      var tcFila=Number(x.tc)||tcFallback||0;
+      equivalente=tcFila>0?'<div class="report-amount-usd">≈ '+fmtU((Number(x.monto)||0)/tcFila)+'</div>':'<div class="report-amount-usd report-amount-usd-na">TC no disponible</div>';
+    }
+    return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount-wrap"><div class="report-amount">'+importePrincipal+'</div>'+equivalente+'</div></div><div class="report-meta">'+repEsc(meta)+'</div></div>';
+  }).join('')+'</div>':'<div class="card"><div class="empty">No hay movimientos para estos filtros.</div></div>';
 }
 function limpiarReporte(){['rep-tipo','rep-moneda','rep-mes','rep-obra','rep-rubro','rep-subrubro'].forEach(function(id){var e=document.getElementById(id);if(e)e.value=''});renderReporte();}
 
@@ -4797,11 +4807,58 @@ function cqLanzarSyncMovimiento(mov,contexto,oldMov){
   });
 }
 async function cqEliminarVinculosGastos(mov){
-  if(!mov||!Array.isArray(mov.imputaciones)||!mov.imputaciones.length)return true;
+  if(!mov||mov.id==null)return true;
   try{
-    for(var i=0;i<mov.imputaciones.length;i++){
-      var imp=mov.imputaciones[i];
-      await cqUpsertGastoObra(imp.obraId,cqGastoPayloadCaja(mov,imp,'Caja'),true);
+    var f=window._cqFirebase;
+    if(!f||!f.getDoc||!f.runTransaction)throw new Error('Firebase no está disponible');
+
+    // CQ 01/11/2026 — baja robusta Caja → Gastos.
+    // Antes se recorrían solamente las imputaciones que conservaba el movimiento.
+    // Un movimiento viejo/inconsistente podía quedar borrado en Caja pero seguir en Gastos.
+    // Ahora buscamos por el ID estable del movimiento en todas las obras conocidas de Gastos.
+    var obraIds=[];
+    function addObraId(v){
+      v=String(v==null?'':v).trim();
+      if(v&&obraIds.indexOf(v)<0)obraIds.push(v);
+    }
+    (Array.isArray(mov.imputaciones)?mov.imputaciones:[]).forEach(function(x){if(x)addObraId(x.obraId);});
+    (Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[]).forEach(function(x){if(x)addObraId(x.obraId);});
+
+    var cfg=CQ_GASTOS_CONFIG_FIREBASE;
+    if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(_e){}}
+    if(cfg&&Array.isArray(cfg.obras))cfg.obras.forEach(function(o){if(o)addObraId(o.id);});
+    addObraId('oficina');
+
+    var movId=String(mov.id);
+    var idPrefix='caja_'+movId+'_';
+    function esVinculoDelMovimiento(g){
+      if(!g)return false;
+      var gid=String(g.id||'');
+      var origenId=String(g.cajaMovimientoId||g.cajaGerenciaMovimientoId||'');
+      return origenId===movId || gid.indexOf(idPrefix)===0;
+    }
+
+    for(var i=0;i<obraIds.length;i++){
+      var obraId=obraIds[i];
+      var ref=f.doc(f.db,'gastos',obraId);
+      var snap=await f.getDoc(ref);
+      if(!snap.exists())continue;
+      var previa=snap.data()||{};
+      var prevGastos=Array.isArray(previa.gastos)?previa.gastos:[];
+      if(!prevGastos.some(esVinculoDelMovimiento))continue;
+
+      // Releer dentro de transacción para no pisar una carga simultánea de Gastos.
+      await f.runTransaction(f.db,async function(tx){
+        var s=await tx.get(ref);
+        if(!s.exists())return;
+        var d=s.data()||{};
+        var a=Array.isArray(d.gastos)?d.gastos.slice():[];
+        var filtrada=a.filter(function(g){return !esVinculoDelMovimiento(g);});
+        if(filtrada.length===a.length)return;
+        d.gastos=filtrada;
+        d.updatedAt=new Date().toISOString();
+        tx.set(ref,d);
+      });
     }
     return true;
   }catch(e){
@@ -7812,50 +7869,97 @@ changeUser.addEventListener("click",async()=>{
 </script>
 
 
-
-<!-- CQ 01/11/2026 — Subrubro móvil: TODO el campo funciona como la flecha -->
-<style id="cq-mobile-subrubro-whole-field-click-v1">
+<style id="cq-caja-ajustes-finales-01112026">
+/* CQ 01/11/2026 — modal de carga móvil: Guardar siempre visible y formato normal entra sin scroll. */
 @media (max-width:599px){
-  #modal-gasto-fondo .cq-sub-combo{
-    cursor:pointer!important;
-    touch-action:manipulation;
+  #modal-gasto-fondo{
+    padding:3px!important;
+    align-items:center!important;
+    justify-content:center!important;
+    overflow:hidden!important;
   }
-  /* Evita que Android trate el input como campo editable/foco: el toque lo recibe el contenedor. */
-  #modal-gasto-fondo #gf-subrubro-search,
-  #modal-gasto-fondo .cq-sub-combo .cq-sub-btn{
-    pointer-events:none!important;
+  #modal-gasto-fondo .modal{
+    width:min(98vw,460px)!important;
+    max-width:98vw!important;
+    height:calc(100dvh - 6px)!important;
+    max-height:calc(100dvh - 6px)!important;
+    margin:auto!important;
+    display:flex!important;
+    flex-direction:column!important;
+    overflow:hidden!important;
   }
+  #modal-gasto-fondo .modal-hd{
+    position:relative!important;
+    flex:0 0 auto!important;
+    min-height:40px!important;
+    padding:7px 13px 6px!important;
+  }
+  #modal-gasto-fondo .modal-ttl{font-size:14px!important}
+  #modal-gasto-fondo .mbody{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    padding:5px 10px 3px!important;
+    -webkit-overflow-scrolling:touch!important;
+  }
+  #modal-gasto-fondo .fld{margin-bottom:4px!important}
+  #modal-gasto-fondo .fld label{margin-bottom:2px!important;font-size:8px!important}
+  #modal-gasto-fondo .fld input,
+  #modal-gasto-fondo .fld select,
+  #modal-gasto-fondo .fld textarea,
+  #modal-gasto-fondo .cq-sub-search{
+    min-height:34px!important;
+    height:34px!important;
+    padding:5px 8px!important;
+    font-size:11.4px!important;
+  }
+  #modal-gasto-fondo input[type="date"]{height:34px!important}
+  #modal-gasto-fondo .imputacion-box{margin-top:5px!important;padding:6px!important}
+  #modal-gasto-fondo .imputacion-title{margin-bottom:4px!important;font-size:9.3px!important}
+  #modal-gasto-fondo .cq-add-gastos-row{
+    min-height:38px!important;
+    padding:5px 8px!important;
+    margin-bottom:4px!important;
+  }
+  #modal-gasto-fondo .cq-add-gastos-copy b{font-size:9px!important}
+  #modal-gasto-fondo .cq-add-gastos-copy small{font-size:7px!important;line-height:1.05!important}
+  #modal-gasto-fondo #gf-obras.obra-multi{gap:4px!important;margin-top:3px!important}
+  #modal-gasto-fondo #gf-obras .obra-multi-btn{
+    min-height:29px!important;
+    height:29px!important;
+    padding:2px 4px!important;
+    font-size:8.15px!important;
+    line-height:1.03!important;
+  }
+  #modal-gasto-fondo #gf-comentario{
+    min-height:32px!important;
+    height:32px!important;
+    padding-top:5px!important;
+    padding-bottom:5px!important;
+  }
+  #modal-gasto-fondo .cq-materiales-action{margin-top:2px!important;padding:4px 6px!important;min-height:30px!important}
+  #modal-gasto-fondo #gf-reparto.reparto-wrap{gap:2px!important;margin-top:2px!important}
+  #modal-gasto-fondo #gf-reparto .reparto-row{min-height:24px!important}
+  #modal-gasto-fondo #gf-reparto-total{margin-top:2px!important}
+  #modal-gasto-fondo .mfooter{
+    position:relative!important;
+    flex:0 0 auto!important;
+    z-index:40!important;
+    min-height:42px!important;
+    padding:5px 10px 6px!important;
+    background:#fff!important;
+    border-top:1px solid #EEF4EE!important;
+    box-shadow:0 -4px 12px rgba(28,61,53,.06)!important;
+  }
+  #modal-gasto-fondo .mfooter .btn{min-height:31px!important;padding:6px 12px!important;font-size:9.6px!important}
 }
+
+/* Reporte: equivalente en dólares por cada movimiento en pesos. */
+.report-amount-wrap{text-align:right;white-space:nowrap}
+.report-amount-usd{margin-top:2px;font-family:var(--mono);font-size:9px;font-weight:700;color:#7A8D83}
+.report-amount-usd-na{font-size:8px;color:#A5AEA8}
 </style>
-<script id="cq-mobile-subrubro-whole-field-click-v1-js">
-(function(){
-  function isMobile(){
-    return window.matchMedia && window.matchMedia('(max-width:599px)').matches;
-  }
-
-  function wireWholeSubrubroField(){
-    var combo=document.querySelector('#modal-gasto-fondo .cq-sub-combo');
-    var field=document.getElementById('gf-subrubro-search');
-    if(!combo || !field || combo.dataset.cqWholeSubWired==='1')return;
-
-    combo.dataset.cqWholeSubWired='1';
-
-    combo.addEventListener('click',function(e){
-      if(!isMobile())return;
-      if(e.target && e.target.closest && e.target.closest('.cq-sub-panel'))return;
-      e.preventDefault();
-      e.stopPropagation();
-      field.blur();
-      if(typeof window.cqMobileSubrubroOpen==='function'){
-        window.cqMobileSubrubroOpen();
-      }
-    },true);
-  }
-
-  document.addEventListener('DOMContentLoaded',wireWholeSubrubroField);
-  if(document.readyState!=='loading')setTimeout(wireWholeSubrubroField,0);
-})();
-</script>
 
 </body>
 </html>
