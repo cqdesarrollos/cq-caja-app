@@ -4330,21 +4330,98 @@ function cqLanzarSyncMaterialesCaja(mov,oldMov){
   });
 }
 async function cqEliminarVinculosMateriales(mov){
-  if(!mov||!mov.materialesAgregar||!Array.isArray(mov.materialesCantidades)||!window._cqFirebase)return true;
+  // CQ 02/11/2026 — baja robusta Caja → Materiales.
+  // Al borrar TODO el movimiento de Caja, eliminar también TODAS sus cargas en Materiales
+  // por la identidad estable sourceMovementId. Esto cubre cargas históricas cuyo
+  // integrationId cambió o movimientos que ya no conservan materialesAgregar/cantidades.
+  if(!mov||mov.id==null||!window._cqFirebase)return true;
   var f=window._cqFirebase;
+  var movId=String(mov.id);
+  var prefijoIid='caja_'+movId+'_';
+
+  function esCargaDeEsteMovimiento(c){
+    if(!c)return false;
+    var iid=String(c.integracionId||'');
+    var sid=String(c.sourceMovementId||'');
+    var origen=String(c.origen||c.source||'').toLowerCase().replace(/[\s-]+/g,'_');
+    var esCaja=origen==='caja_gerencia'||origen==='cq_caja_gerencia'||iid.indexOf('caja_')===0;
+    return (sid===movId&&esCaja)||iid.indexOf(prefijoIid)===0;
+  }
+
   try{
-    var payloads=mov.materialesCantidades.map(function(x){return cqMaterialesPayloadCaja(mov,x,false);});
+    var idsAuditoria={};
 
-    // Borrar todas las obras del movimiento en una sola transacción para evitar estados parciales.
-    await cqCgMaterializarDirectoLote(payloads);
+    // IDs esperados de la versión actual, si el movimiento todavía conserva cantidades.
+    (Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[]).forEach(function(x){
+      if(x&&x.obraId)idsAuditoria[cqMaterialesIntegrationId(mov.id,x.obraId)]=true;
+    });
 
-    // Mantener auditoría sin convertirla en requisito para la eliminación real.
-    for(var i=0;i<payloads.length;i++){
-      var payload=payloads[i];
+    var ref=f.doc(f.db,'materiales','data_planilla_exacta_v4');
+
+    // Fuente real: borrar directamente del documento principal de Materiales por movimiento.
+    await f.runTransaction(f.db,async function(tx){
+      var snap=await tx.get(ref);
+      if(!snap.exists())return;
+      var data=snap.data()||{};
+      var cargas=Array.isArray(data.cargas)?data.cargas.slice():[];
+      var matIds=[];
+      var cambio=false;
+
+      data.cargas=cargas.filter(function(c){
+        if(!esCargaDeEsteMovimiento(c))return true;
+        cambio=true;
+        if(c&&c.matId!=null&&matIds.indexOf(String(c.matId))<0)matIds.push(String(c.matId));
+        if(c&&c.integracionId)idsAuditoria[String(c.integracionId)]=true;
+        return false;
+      });
+
+      if(!cambio)return;
+
+      // Si la carga había creado automáticamente un material y ya no queda ninguna referencia,
+      // limpiar también ese material automático, igual que hacía el borrado anterior.
+      matIds.forEach(function(matId){
+        var sigue=(data.cargas||[]).some(function(c){return String(c&&c.matId)===String(matId);});
+        if(sigue)return;
+        var extra=(data.extraMats||[]).find(function(x){return String(x&&x.id)===String(matId);});
+        if(extra&&(extra.autoCreated===true||String(extra.comentarios||'').indexOf('Creado automáticamente desde ')===0)){
+          data.extraMats=(data.extraMats||[]).filter(function(x){return String(x&&x.id)!==String(matId);});
+          if(data.matCodigos)delete data.matCodigos[matId];
+          if(data.matCategorias)delete data.matCategorias[matId];
+          if(data.matNombres)delete data.matNombres[matId];
+        }
+      });
+
+      data.updatedAt=new Date().toISOString();
+      data.updatedByIntegration='delete_caja_'+movId;
+      tx.set(ref,data);
+    });
+
+    // Auditoría: desactivar también todos los documentos de integración conocidos.
+    // Materiales actual no los usa como fuente activa para Caja, pero así tampoco quedan verdes/activos históricos.
+    var ids=Object.keys(idsAuditoria);
+    for(var i=0;i<ids.length;i++){
+      var iid=ids[i];
       try{
-        await f.setDoc(f.doc(f.db,'materiales_integraciones',payload.integrationId),payload);
-      }catch(e){
-        console.warn('Respaldo materiales_integraciones no disponible',e);
+        await f.setDoc(f.doc(f.db,'materiales_integraciones',iid),{
+          integrationId:iid,
+          source:'cq_caja_gerencia',
+          sourceLabel:'Caja Gerencia',
+          sourceMovementId:movId,
+          active:false,
+          deletedFromCajaGerencia:true,
+          deletedAt:new Date().toISOString()
+        },{merge:true});
+      }catch(eAudit){
+        console.warn('No se pudo desactivar auditoría de Materiales',iid,eAudit);
+      }
+    }
+
+    // Confirmación real: no devolver OK mientras la planilla principal conserve una carga del movimiento.
+    var check=await f.getDoc(ref);
+    if(check.exists()){
+      var restantes=Array.isArray((check.data()||{}).cargas)?(check.data()||{}).cargas:[];
+      if(restantes.some(esCargaDeEsteMovimiento)){
+        throw new Error('Materiales todavía conserva una carga vinculada al movimiento '+movId);
       }
     }
     return true;
