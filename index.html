@@ -4842,27 +4842,50 @@ function cqGastoPayloadCaja(mov,imp,contexto){
     cajaObraId:imp.obraId
   };
 }
+// Mantiene sincronizados el array historico y gastosItems. Gastos lee
+// gastosItems por encima del array: borrar solo del array hacia reaparecer el ingreso.
 async function cqUpsertGastoObra(obraId,payload,removeOnly){
   var f=window._cqFirebase;
   if(!f||!f.runTransaction)throw new Error('Firebase no está disponible');
+  if(!obraId||!payload||!payload.id)throw new Error('Falta la obra o el ID del vínculo con Gastos');
   var ref=f.doc(f.db,'gastos',obraId);
   await f.runTransaction(f.db,async function(tx){
     var snap=await tx.get(ref);
-    var data=snap.exists()?snap.data():{gastos:[],financiero:{venta:0,comision:0,acuerdosMO:{mo:{monto:0,moneda:'usd',tc:1400},ext:{}}}};
+    var data=snap.exists()?(snap.data()||{}):{gastos:[],financiero:{}};
     var gastos=Array.isArray(data.gastos)?data.gastos.slice():[];
-    gastos=gastos.filter(function(g){
+    var items=data.gastosItems&&typeof data.gastosItems==='object'?Object.assign({},data.gastosItems):{};
+    var id=String(payload.id),movId=String(payload.cajaMovimientoId||payload.cajaGerenciaMovimientoId||'');
+    var ahora=new Date().toISOString(),ids=new Set([id]);
+    function esVinculado(g){
       if(!g)return false;
-      if(String(g.id)===String(payload.id))return false;
-      // Compatibilidad con versiones anteriores de Caja: el gasto puede existir
-      // con otro ID, pero conservar el vínculo estructurado al mismo movimiento/obra.
-      var mismoMov=String(g.cajaMovimientoId||g.cajaGerenciaMovimientoId||'')===String(payload.cajaMovimientoId||payload.cajaGerenciaMovimientoId||'');
-      var mismaObra=String(g.cajaObraId||obraId||'')===String(payload.cajaObraId||obraId||'');
-      if(mismoMov&&mismaObra)return false;
-      return true;
+      if(String(g.id||'')===id)return true;
+      var origen=String(g.cajaMovimientoId||g.cajaGerenciaMovimientoId||'');
+      var mismaObra=String(g.cajaObraId||obraId)===String(payload.cajaObraId||obraId);
+      return !!(movId&&origen===movId&&mismaObra);
+    }
+    gastos=gastos.filter(function(g){
+      if(esVinculado(g)){
+        if(g&&g.id!=null)ids.add(String(g.id));
+        return false;
+      }
+      return !!g;
     });
-    if(!removeOnly)gastos.push(payload);
+    Object.keys(items).forEach(function(k){if(esVinculado(items[k]))ids.add(k);});
+    // Tombstones: si gastosItems tenia una copia activa, no vuelve a aparecer
+    // al abrir la obra, refrescar el reporte o migrar el documento.
+    ids.forEach(function(k){
+      items[k]={id:k,activo:false,deletedAt:ahora,updatedAt:ahora,
+        origen:'cq_caja_gerencia',cajaMovimientoId:movId,cajaObraId:String(obraId)};
+    });
+    if(!removeOnly){
+      var vigente=Object.assign({},payload,{id:id,activo:true,updatedAt:ahora});
+      gastos.push(vigente);
+      items[id]=vigente;
+    }
     data.gastos=gastos;
-    data.updatedAt=new Date().toISOString();
+    data.gastosItems=items;
+    data.updatedAtIntegraciones=ahora;
+    data.updatedAt=ahora;
     tx.set(ref,data);
   });
 }
@@ -6349,7 +6372,7 @@ async function borrarFondoMov(tipo,id){
   var lista=DB[cfg.movs]||[];
   var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+cfg.fmt(mov.monto)) : 'este movimiento';
-  if(!confirm('¿Eliminar gasto?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
+  if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
 
   // Primero limpiar vínculos externos. Si falla alguno, conservar Caja intacta.
