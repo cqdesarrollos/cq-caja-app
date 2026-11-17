@@ -3341,7 +3341,12 @@ function reporteMovimientos(){
         obra:obra,obraId:imp?(imp.obraId||''):'',
         rubro:m.imputacionRubroLabel||m.imputacionRubro||'',rubroId:m.imputacionRubro||'',
         subrubro:m.imputacionSubrubroLabel||m.imputacionSubrubro||'',
-        desc:m.desc||'',comentario:m.imputacionComentario||''
+        desc:m.desc||'',comentario:m.imputacionComentario||'',
+        // Identificadores de la transferencia Deuda u$s -> Fondo común u$s.
+        // Se usan solo para evitar mostrar dos filas de una misma operación en el Reporte.
+        aporteFondoUsd:!!(m.aporteFondoUsd||m.usdPurpose==='aporte'),
+        aporteDesdeDeudaUsd:!!m.aporteDesdeDeudaUsd,
+        aporteOrigenId:m.aporteOrigenId==null?'':String(m.aporteOrigenId)
       });
     });
   });}
@@ -7533,6 +7538,13 @@ function cqReporteEditar(boton){
     if(mov.tipo==='pago_parcial')return openEditPagoParcial(moneda,mov.id);
     toast('Este tipo de movimiento no tiene editor disponible');return;
   }
+  // El ingreso de Fondo común u$s es la contrapartida de un aporte de Deuda u$s.
+  // Editar siempre el origen para que ambas partidas se mantengan sincronizadas.
+  if(tipo==='fondo-usd'&&mov.aporteDesdeDeudaUsd&&mov.aporteOrigenId!=null){
+    var aporteOrigen=(DB.deudaUsd||[]).find(function(m){return String(m.id)===String(mov.aporteOrigenId);});
+    if(!aporteOrigen){toast('No se encontró el aporte original en Deuda u$s.');return;}
+    return openEditDeuda('usd',aporteOrigen.id);
+  }
   // Los ingresos y egresos de cambio de moneda usan el editor de su operación de origen.
   cqOpenEditFondoMovSmart(tipo,mov.id);
 }
@@ -7682,13 +7694,26 @@ function cqReporteEditar(boton){
       return true;
     });
 
+    // Una transferencia interna tiene dos contrapartidas en las cuentas, pero
+    // debe ocupar una sola fila en el Reporte cuando ambas pasan los filtros.
+    // Mostramos el INGRESO a Fondo común u$s; no borramos la salida de Deuda.
+    var ingresosAportePresentes=new Set();
+    f.forEach(function(x){
+      if(x.moneda!=='usd')return;
+      if(x.origen==='Fondo común'&&x.tipo==='ingreso'&&x.aporteDesdeDeudaUsd&&x.aporteOrigenId)ingresosAportePresentes.add(x.aporteOrigenId);
+    });
+    var fVisibles=f.filter(function(x){
+      return !(x.moneda==='usd'&&x.origen==='Deuda'&&x.tipo==='gasto'&&x.aporteFondoUsd&&ingresosAportePresentes.has(String(x.id)));
+    });
+
     var ordenEl=document.getElementById('cq-rep-orden');
     var orden=ordenEl?ordenEl.value:'fecha';
-    f.sort(function(a,b){
+    var ordenarReporte=function(a,b){
       if(orden==='importe-desc')return (Number(b.monto)||0)-(Number(a.monto)||0)||((b.fecha||'').localeCompare(a.fecha||''));
       if(orden==='importe-asc')return (Number(a.monto)||0)-(Number(b.monto)||0)||((b.fecha||'').localeCompare(a.fecha||''));
       return (b.fecha||'').localeCompare(a.fecha||'')||Number(b.id)-Number(a.id);
-    });
+    };
+    fVisibles.sort(ordenarReporte);
 
     var soloUnTipo=sel.tipo.length===1;
     function signo(x){return soloUnTipo?1:(x.tipo==='ingreso'?1:-1);}
@@ -7712,10 +7737,10 @@ function cqReporteEditar(boton){
       +'<div class="report-kpi"><small>'+(tipoTxt?'Total pesos':'Neto pesos')+'</small><b>'+fmtP(pesos)+'</b>'+subPesos+'</div>'
       +'<div class="report-kpi"><small>'+(tipoTxt?'Total dólares':'Neto dólares')+'</small><b>'+fmtU(usd)+'</b></div>'
       +'</div>'
-      +'<div class="filtro-total">'+f.length+' movimiento'+(f.length===1?'':'s')+(tipoTxt?'':' · Ingresos (+) · Gastos (−)')+'</div>';
+      +'<div class="filtro-total">'+fVisibles.length+' movimiento'+(fVisibles.length===1?'':'s')+(tipoTxt?'':' · Ingresos (+) · Gastos (−)')+'</div>';
 
-    document.getElementById('reporte-lista').innerHTML=f.length
-      ?'<div class="card">'+f.map(function(x){
+    document.getElementById('reporte-lista').innerHTML=fVisibles.length
+      ?'<div class="card">'+fVisibles.map(function(x){
           var titulo=x.subrubro||x.desc||(x.tipo==='ingreso'?'Ingreso':'Gasto');
           var meta=[fmtFecha(x.fecha),x.tipo==='ingreso'?'Ingreso':'Gasto',x.origen,x.obra,x.rubro,x.comentario].filter(Boolean).join(' · ');
           return '<div class="report-row"><div class="report-top"><div class="report-title">'+repEsc(titulo)+'</div><div class="report-amount">'+(x.moneda==='pesos'?fmtP(x.monto)+'<span class="report-amount-usd">≈ '+(((Number(x.tc)||tcFallback||0)>0)?fmtU((Number(x.monto)||0)/(Number(x.tc)||tcFallback||0)):'Sin TC')+'</span>':fmtU(x.monto))+'</div></div><div class="report-meta">'+repEsc(meta)+'</div><div class="cq-rep-row-foot"><button type="button" class="cq-rep-edit" data-origen="'+repEsc(x.origen)+'" data-moneda="'+repEsc(x.moneda)+'" data-id="'+repEsc(x.id)+'" onclick="cqReporteEditar(this)" title="Modificar movimiento original" aria-label="Editar '+repEsc(x.tipo==='ingreso'?'ingreso':'gasto')+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L9 17l-4 1 1-4Z"/></svg>Editar</button></div></div>';
