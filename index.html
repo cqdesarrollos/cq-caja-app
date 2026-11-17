@@ -8411,6 +8411,9 @@ function cqReporteEditar(boton){
         var oldPanel=document.getElementById('gf-subrubro-panel');
         if(oldPanel)oldPanel.classList.remove('open');
         if(typeof window.cqActualizarBotonMateriales==='function')window.cqActualizarBotonMateriales('gf');
+        // El selector móvil modifica el campo oculto directamente: actualizar también
+        // el bloque financiero, igual que el selector de subrubros de escritorio.
+        if(typeof window.cqComisionCajaChanged==='function')window.cqComisionCajaChanged('gf');
         closeSheet();
       };
     });
