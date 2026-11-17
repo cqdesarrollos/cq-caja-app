@@ -147,6 +147,8 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 .usd-purpose{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
 .usd-purpose button{padding:11px 8px;border:2px solid var(--sand3);border-radius:9px;background:#fff;color:var(--green);font-family:'Space Grotesk',sans-serif;font-weight:800;cursor:pointer}
 .usd-purpose button.active{border-color:var(--green2);background:#EBF7F0}
+.usd-purpose.usd-purpose-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:480px){.usd-purpose.usd-purpose-3 button{padding:10px 6px;font-size:11px;line-height:1.2}}
 .fx-box{display:none;background:#F7F6F3;border:1px solid var(--sand3);border-radius:10px;padding:12px;margin:8px 0 2px}
 .fx-box.show{display:block}.fx-total{font-family:var(--mono);font-size:18px;font-weight:800;color:var(--green);margin:3px 0 10px}
 .fx-note{font-size:10px;color:#7A8D83;margin-top:6px;line-height:1.35}
@@ -1979,7 +1981,7 @@ body{overflow-x:hidden!important}
       <div class="fld"><label>¿Quién pagó?</label>
         <div class="payer-chips" id="gd-payer-chips"></div>
       </div>
-      <div id="gd-usd-purpose-wrap" style="display:none"><div class="fld"><label>¿Qué tipo de salida es?</label><div class="usd-purpose"><button type="button" id="gd-purpose-cambio" onclick="cqSetUsdPurpose('gd','cambio')">💱 Cambio de moneda</button><button type="button" id="gd-purpose-pago" onclick="cqSetUsdPurpose('gd','pago')">💳 Pago</button></div></div></div>
+      <div id="gd-usd-purpose-wrap" style="display:none"><div class="fld"><label>¿Qué tipo de salida es?</label><div class="usd-purpose usd-purpose-3"><button type="button" id="gd-purpose-cambio" onclick="cqSetUsdPurpose('gd','cambio')">💱 Cambio de moneda</button><button type="button" id="gd-purpose-pago" onclick="cqSetUsdPurpose('gd','pago')">💳 Pago</button><button type="button" id="gd-purpose-aporte" onclick="cqSetUsdPurpose('gd','aporte')">Aporte Fondo común u$s</button></div></div></div>
       <div class="fld"><label id="gd-monto-label">Monto $</label><input type="number" id="gd-monto" min="0" step="0.01" placeholder="0" oninput="cqUsdMontoChanged('gd');cqImpRenderReparto('gd')"></div>
       <div class="fld"><label>Concepto / descripción</label><input type="text" id="gd-desc" placeholder="Ej. Servicios, limpieza, honorarios..."></div>
       <div class="fx-box" id="gd-fx-box"><div class="fld"><label>Tipo de cambio</label><input type="number" id="gd-fx-tc" min="1" step="1" oninput="cqFxRecalc('gd')"></div><div class="fld"><label>Total convertido a pesos</label><div class="fx-total" id="gd-fx-total">$ 0</div></div><div class="row2"><div class="fld"><label>A Fondo común $</label><input type="number" id="gd-fx-fondo" min="0" step="0.01" value="0" oninput="cqFxSplit('gd','fondo')"></div><div class="fld"><label>A Banco $</label><input type="number" id="gd-fx-banco" min="0" step="0.01" value="0" oninput="cqFxSplit('gd','banco')"></div></div><div class="fld"><label>Observación <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#94a3b8">(opcional)</span></label><input type="text" id="gd-fx-obs" placeholder="Ej. pago proveedor, transferencia, cambio, etc."></div><div class="fx-note">La suma debe coincidir con el total convertido. Tanto en Cambio de moneda como en Pago, al guardar se generan automáticamente los movimientos en pesos.</div></div>
@@ -5112,11 +5114,33 @@ function cqDualSyncHTML(mov){
 }
 
 
+// Deuda u$s -> Fondo común u$s: contrapartida vinculada por ID, sin convertir divisas.
+function cqAporteDescDeudaUsd(mov){return String(mov&&mov.desc||'').trim()||'Aporte Fondo común u$s';}
+function cqUpsertIngresoAporteFondoUsd(sourceMov){
+  if(!sourceMov||!sourceMov.id)return;
+  if(!Array.isArray(DB.fondoUsdMovs))DB.fondoUsdMovs=[];
+  var base={
+    tipo:'ingreso',monto:Number(sourceMov.monto)||0,
+    fecha:sourceMov.fecha||todayISO(),desc:cqAporteDescDeudaUsd(sourceMov),
+    tc:Number(sourceMov.tc)||Number(DB.lastTC)||0,
+    aporteDesdeDeudaUsd:true,aporteOrigenId:sourceMov.id
+  };
+  var idx=DB.fondoUsdMovs.findIndex(function(m){return String(m.aporteOrigenId||'')===String(sourceMov.id);});
+  if(idx>=0){
+    DB.fondoUsdMovs[idx]=Object.assign({},DB.fondoUsdMovs[idx],base,{updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()});
+  }else{
+    DB.fondoUsdMovs.push(Object.assign({id:cqNuevoMovimientoId(),creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},base));
+  }
+}
+function cqBorrarIngresoAporteFondoUsd(sourceId){
+  DB.fondoUsdMovs=(DB.fondoUsdMovs||[]).filter(function(m){return String(m.aporteOrigenId||'')!==String(sourceId);});
+}
+
 var cqUsdPurpose={gd:'pago',gf:'pago'};
 function cqIsUsdPrefix(prefix){return prefix==='gd'?gdMoneda==='usd':(gfTipo==='fondo-usd'||gfTipo==='santander-usd');}
 function cqSetUsdPurpose(prefix,purpose){
   cqUsdPurpose[prefix]=purpose;
-  ['cambio','pago'].forEach(function(x){
+  ['cambio','pago','aporte'].forEach(function(x){
     var b=document.getElementById(prefix+'-purpose-'+x);
     if(b)b.classList.toggle('active',x===purpose);
   });
@@ -5294,7 +5318,7 @@ function openEditDeuda(moneda,id){
   cqImpInit('gd',g);
   if(moneda==='usd'){
     cqPrepareUsdPurpose('gd',true);
-    var purpose=(g.cambioMoneda||g.usdPurpose==='cambio')?'cambio':'pago';
+    var purpose=(g.aporteFondoUsd||g.usdPurpose==='aporte')?'aporte':((g.cambioMoneda||g.usdPurpose==='cambio')?'cambio':'pago');
     cqUsdPurpose.gd=purpose;
     cqSetUsdPurpose('gd',purpose);
     cqFxCargarEdicion('gd',g);
@@ -5317,11 +5341,12 @@ async function guardarGastoDeuda(){
   var esUsd=gdMoneda==='usd';
   var esCambio=esUsd&&cqUsdPurpose.gd==='cambio';
   var esPagoUsd=esUsd&&cqUsdPurpose.gd==='pago';
-  var fx=esUsd?cqFxRead('gd'):null;if(fx&&fx.error){alert(fx.error);return;}
+  var esAporteUsd=esUsd&&cqUsdPurpose.gd==='aporte';
+  var fx=(esUsd&&!esAporteUsd)?cqFxRead('gd'):null;if(fx&&fx.error){alert(fx.error);return;}
   var comisionCaja=cqComisionCajaRead('gd');if(comisionCaja.error){alert(comisionCaja.error);return;}
-  var imp=esCambio?{}:cqImpRead('gd'); if(imp.error){alert(imp.error);return;}
-  var tc=esUsd?fx.tc:getLastTC();
-  if(esUsd&&tc>0)cqActualizarUltimoTCDesdeCarga(tc);
+  var imp=(esCambio||esAporteUsd)?{}:cqImpRead('gd'); if(imp.error){alert(imp.error);return;}
+  var tc=(esUsd&&!esAporteUsd)?fx.tc:getLastTC();
+  if(esUsd&&!esAporteUsd&&tc>0)cqActualizarUltimoTCDesdeCarga(tc);
   var lista=deudaList(gdMoneda),movSync=null,oldSync=null;
   if(gdEditId){
     var idx=lista.findIndex(function(x){return x.id===gdEditId;});
@@ -5331,19 +5356,36 @@ async function guardarGastoDeuda(){
       movSync=lista[idx];
       if(esUsd){
         if(esCambio){
+          cqBorrarIngresoAporteFondoUsd(movSync.id);
           movSync.cambioMoneda=true;
           movSync.usdPurpose='cambio';
           delete movSync.pagoUsdConvertido;
+          delete movSync.aporteFondoUsd;
+          cqActualizarIngresosCambio(movSync,fx,fecha,labelDeuda(gdMoneda),'cambio');
+        }else if(esAporteUsd){
+          movSync.desc=desc||'Aporte Fondo común u$s';
+          movSync.aporteFondoUsd=true;
+          movSync.usdPurpose='aporte';
+          delete movSync.cambioMoneda;
+          delete movSync.pagoUsdConvertido;
+          delete movSync.totalPesos;
+          delete movSync.fxFondo;
+          delete movSync.fxBanco;
+          delete movSync.observacion;
+          cqBorrarIngresosCambio(movSync.id);
+          cqUpsertIngresoAporteFondoUsd(movSync);
         }else{
+          cqBorrarIngresoAporteFondoUsd(movSync.id);
           movSync.pagoUsdConvertido=true;
           movSync.usdPurpose='pago';
           delete movSync.cambioMoneda;
+          delete movSync.aporteFondoUsd;
+          cqActualizarIngresosCambio(movSync,fx,fecha,labelDeuda(gdMoneda),'pago');
         }
-        cqActualizarIngresosCambio(movSync,fx,fecha,labelDeuda(gdMoneda),cqUsdPurpose.gd);
       }
     }
     toast('✓ Gasto actualizado');
-    persist('Se modificó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
+    persist(esAporteUsd?('Se modificó un aporte de '+fmtMon(gdMoneda,monto)+' de Deuda u$s a Fondo común u$s'):('Se modificó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda)));
   } else {
     var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp,comisionCaja);
     if(tc) nuevo.tc=tc;
@@ -5358,18 +5400,26 @@ async function guardarGastoDeuda(){
       nuevo.usdPurpose='pago';
       nuevo.totalPesos=fx.total;
       nuevo.observacion=fx.observacion||'';
+    }else if(esAporteUsd){
+      nuevo.desc=desc||'Aporte Fondo común u$s';
+      nuevo.aporteFondoUsd=true;
+      nuevo.usdPurpose='aporte';
     }
     lista.push(nuevo);movSync=nuevo;
-    if(esUsd){
+    if(esAporteUsd){
+      cqUpsertIngresoAporteFondoUsd(nuevo);
+    }else if(esUsd){
       nuevo.fxFondo=fx.fondo;nuevo.fxBanco=fx.banco;
       cqCrearIngresosCambioPesos(fx,fecha,labelDeuda(gdMoneda),nuevo.id,cqUsdPurpose.gd);
     }
-    toast(esUsd
+    toast(esAporteUsd?'✓ Aporte registrado en Fondo común u$s':(esUsd
       ?(esCambio?'✓ Cambio registrado y pesos distribuidos':'✓ Pago registrado y pesos distribuidos')
-      :'✓ Gasto registrado: '+fmtMon(gdMoneda,monto));
-    persist(esUsd
-      ?((esCambio?'Se cambió ':'Se registró un pago de ')+fmtMon(gdMoneda,monto)+' equivalente a '+fmtP(fx.total)+' desde '+labelDeuda(gdMoneda))
-      :'Se cargó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
+      :'✓ Gasto registrado: '+fmtMon(gdMoneda,monto)));
+    persist(esAporteUsd
+      ?('Se registró un aporte de '+fmtMon(gdMoneda,monto)+' desde Deuda u$s a Fondo común u$s')
+      :(esUsd
+        ?((esCambio?'Se cambió ':'Se registró un pago de ')+fmtMon(gdMoneda,monto)+' equivalente a '+fmtP(fx.total)+' desde '+labelDeuda(gdMoneda))
+        :'Se cargó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda)));
   }
   closeModal('modal-gasto-deuda');renderDeuda(gdMoneda);
   if(currentTab==='reporte')renderReporte();
@@ -5416,6 +5466,7 @@ async function borrarDeuda(moneda,id){
   var idx=lista.findIndex(function(x){return x.id===id;});
   if(idx>=0) lista.splice(idx,1);
   if(mov&&(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'))cqBorrarIngresosCambio(mov.id);
+  if(mov&&(mov.aporteFondoUsd||mov.usdPurpose==='aporte'))cqBorrarIngresoAporteFondoUsd(mov.id);
   persist('Se eliminó un movimiento en '+labelDeuda(moneda));
   toast('Eliminado');renderDeuda(moneda);
 }
