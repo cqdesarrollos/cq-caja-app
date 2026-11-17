@@ -2108,9 +2108,18 @@ body{overflow-x:hidden!important}
   .cq-ing-note{grid-column:1/-1;padding:8px 10px;border-radius:9px;background:#F3F7F4;color:#6F877B;font-size:9.5px;line-height:1.35;font-weight:700}
   .cq-ing-fin-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#F4F7FB;border:1px solid #DFE7EF;font-size:10px;color:#5C7181;font-weight:800}
   .cq-ing-fin-preview strong{color:#173F35;font-family:'JetBrains Mono',monospace;font-size:11px}
+  #ing-impacto-bloque{border-color:#CFE2D5;background:#F4FAF6}
+  #ing-impacto-bloque .cq-ing-section-hd{background:#EFF8F2}
+  #ing-impacto-fields{grid-template-columns:minmax(0,1fr) minmax(0,0.54fr)}
+  #ing-impacto-fields select{width:100%;min-width:0}
+  #ing-impacto-unidad-wrap{display:none}
+  #ing-impacto-preview{display:none}
+  #ing-impacto-bloque .cq-ing-note{background:#EAF5EC;color:#52735C}
   @media(max-width:600px){
     #modal-ingreso .modal{width:min(96vw,620px)}
     .cq-ing-fields{grid-template-columns:1fr;padding:10px}
+    #ing-impacto-fields{grid-template-columns:1fr 0.7fr;gap:7px}
+    #ing-impacto-fields select{font-size:11.5px}
     .cq-ing-fields .full,.cq-ing-note,.cq-ing-fin-preview{grid-column:1}
   }
 </style>
@@ -2123,20 +2132,35 @@ body{overflow-x:hidden!important}
       <datalist id="dl-desc-ingreso"></datalist>
       <div class="fld"><label>Fecha</label><input type="date" id="ing-fecha" onchange="cqIngresoActualizarPreview()"></div>
 
+      <div class="cq-ing-section" id="ing-impacto-bloque">
+        <div class="cq-ing-section-hd"><span><b>Impacto en Resumen Financiero</b><small>Clasificá el cobro real igual que en Gastos</small></span></div>
+        <div class="cq-ing-fields" id="ing-impacto-fields">
+          <div class="fld"><label>Tipo de ingreso</label><select id="ing-impacto-tipo" onchange="cqIngresoImpactoChanged(true)">
+            <option value="">Movimiento normal (sin vincular)</option>
+            <option value="precio">Efectivo por venta / anticipo</option>
+            <option value="cuota">Cuota por venta</option>
+          </select></div>
+          <div class="fld" id="ing-impacto-unidad-wrap"><label>Unidad</label><select id="ing-impacto-unidad"><option value="">Elegir unidad</option><option value="A">Unidad A</option><option value="B">Unidad B</option></select></div>
+          <div class="cq-ing-fin-preview" id="ing-impacto-preview"><span>Cobro real en U$S</span><strong id="ing-impacto-preview-monto">U$S 0</strong></div>
+          <div class="cq-ing-note">Al elegir anticipo o cuota, se activa el envío a Gastos. Seleccioná allí la obra; el Resumen Financiero tomará la fecha real del ingreso sin duplicar la venta pactada. Las comisiones pagadas se cargan como gasto.</div>
+          <div class="cq-ing-note" id="ing-impacto-legado" style="display:none">Este ingreso ya tenía una vinculación financiera anterior. Se conservará al guardar, salvo que elijas aquí anticipo o cuota para sustituirla por un cobro real.</div>
+        </div>
+      </div>
+
       <div class="cq-ing-section">
         <div class="cq-ing-section-hd">
           <span><b>↩️ Enviar a Gastos como ingreso</b><small>Se registra igual que “Agregar ingreso” en la planilla Gastos</small></span>
           <label class="cq-switch" aria-label="Enviar ingreso a Gastos"><input type="checkbox" id="ing-gastos-toggle" onchange="cqIngresoToggleSecciones()"><span class="cq-switch-slider"></span></label>
         </div>
         <div class="cq-ing-fields off" id="ing-gastos-fields">
-          <div class="fld full"><label>Obra</label><select id="ing-gastos-obra" onchange="cqIngresoObraGastosChanged()"><option value="">Seleccionar obra...</option></select></div>
+          <div class="fld full"><label>Obra</label><select id="ing-gastos-obra" onchange="cqIngresoObraGastosChanged();cqIngresoImpactoAutocompletar()"><option value="">Seleccionar obra...</option></select></div>
           <div class="fld"><label>Categoría</label><select id="ing-gastos-rubro" onchange="cqIngresoRubroChanged()"><option value="">Seleccionar categoría...</option></select></div>
           <div class="fld"><label>Subrubro</label><select id="ing-gastos-subrubro"><option value="">Seleccionar subrubro...</option></select></div>
           <div class="cq-ing-note">Usa exactamente la fecha, moneda y monto de Caja Gerencia. En Gastos se guarda como <b>ingreso</b> (monto negativo), igual que si lo cargaras desde “Agregar ingreso”.</div>
         </div>
       </div>
 
-      <div class="cq-ing-section">
+      <div class="cq-ing-section" style="display:none" aria-hidden="true">
         <div class="cq-ing-section-hd">
           <span><b>📊 Cargar en Resumen financiero</b><small>Precio inicial, cuota o comisión de una unidad</small></span>
           <label class="cq-switch" aria-label="Cargar en Resumen financiero"><input type="checkbox" id="ing-fin-toggle" onchange="cqIngresoToggleSecciones();cqIngresoActualizarPreview()"><span class="cq-switch-slider"></span></label>
@@ -3713,8 +3737,29 @@ const CQ_IMPUTACION_RUBROS=[
   {id:'mo',label:'Mano de obra'},
   {id:'ext',label:'Mano de obra extras'}
 ];
+// Los IDs de rubro son estables; los títulos visibles se leen de la Configuración de Gastos.
+// Actualiza los selectores abiertos sin cambiar la categoría seleccionada.
+function cqAplicarNombresRubrosDesdeGastos(categoryLabels){
+  if(!categoryLabels||typeof categoryLabels!=='object')return;
+  CQ_IMPUTACION_RUBROS.forEach(function(r){
+    var label=categoryLabels[r.id];
+    if(typeof label==='string'&&label.trim())r.label=label.trim();
+  });
+  ['gd-rubro','gf-rubro','ing-gastos-rubro'].forEach(function(id){
+    var select=document.getElementById(id);
+    if(!select)return;
+    Array.prototype.forEach.call(select.options,function(opt){
+      var rubro=CQ_IMPUTACION_RUBROS.find(function(r){return r.id===opt.value;});
+      if(rubro)opt.textContent=rubro.label;
+    });
+  });
+}
 var CQ_GASTOS_CONFIG_FIREBASE=null;
 var CQ_GASTOS_CONFIG_LOADING=null;
+try{
+  var cqCfgCacheCategorias=JSON.parse(localStorage.getItem('gastos_config')||'null');
+  if(cqCfgCacheCategorias)cqAplicarNombresRubrosDesdeGastos(cqCfgCacheCategorias.categoryLabels);
+}catch(e){}
 
 async function cqLoadGastosConfigFirebase(force){
   if(!force&&CQ_GASTOS_CONFIG_FIREBASE)return CQ_GASTOS_CONFIG_FIREBASE;
@@ -3727,7 +3772,8 @@ async function cqLoadGastosConfigFirebase(force){
       if(!snap.exists())throw new Error('No existe config/app de Gastos');
       var d=snap.data()||{};
       if(!Array.isArray(d.obras)||!d.subrubros)throw new Error('Configuración de Gastos incompleta');
-      CQ_GASTOS_CONFIG_FIREBASE={obras:d.obras,subrubros:d.subrubros,defaultTC:d.defaultTC||0};
+      CQ_GASTOS_CONFIG_FIREBASE={obras:d.obras,subrubros:d.subrubros,categoryLabels:d.categoryLabels||{},defaultTC:d.defaultTC||0};
+      cqAplicarNombresRubrosDesdeGastos(CQ_GASTOS_CONFIG_FIREBASE.categoryLabels);
       try{localStorage.setItem('gastos_config',JSON.stringify(CQ_GASTOS_CONFIG_FIREBASE));}catch(e){}
       return CQ_GASTOS_CONFIG_FIREBASE;
     }finally{
@@ -6039,8 +6085,45 @@ function cqIngresoToggleSecciones(){
   var tf=document.getElementById('ing-fin-toggle');
   var fg=document.getElementById('ing-gastos-fields');
   var ff=document.getElementById('ing-fin-fields');
+  var impacto=String((document.getElementById('ing-impacto-tipo')||{}).value||'');
+  if(tg){if(impacto)tg.checked=true;tg.disabled=!!impacto;}
   if(fg)fg.classList.toggle('off',!(tg&&tg.checked));
   if(ff)ff.classList.toggle('off',!(tf&&tf.checked));
+  var uw=document.getElementById('ing-impacto-unidad-wrap'),pv=document.getElementById('ing-impacto-preview');
+  if(uw)uw.style.display=impacto?'block':'none';
+  if(pv)pv.style.display=impacto?'flex':'none';
+}
+function cqIngresoImpactoNorm(txt){
+  return String(txt||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+}
+function cqIngresoImpactoSubrubro(tipo){
+  var arr=cqImpSubrubros('lote');
+  return arr.find(function(x){
+    var n=cqIngresoImpactoNorm(x.label||x.id);
+    if(tipo==='precio')return /(venta|anticipo)/.test(n)&&!n.includes('cuota');
+    if(tipo==='cuota')return n.includes('cuota')&&n.includes('venta');
+    return false;
+  })||null;
+}
+function cqIngresoImpactoAutocompletar(){
+  var tipo=(document.getElementById('ing-impacto-tipo')||{}).value||'';
+  if(!tipo)return;
+  var rub=document.getElementById('ing-gastos-rubro'),sub=document.getElementById('ing-gastos-subrubro');
+  if(!rub||!sub)return;
+  var hallado=cqIngresoImpactoSubrubro(tipo);
+  if(!hallado)return;
+  if(rub.value!=='lote')cqIngresoObraGastosChanged('lote',hallado.id);
+  else if(Array.from(sub.options).some(function(o){return o.value===hallado.id;}))sub.value=hallado.id;
+}
+function cqIngresoImpactoChanged(autoSub){
+  var tipo=(document.getElementById('ing-impacto-tipo')||{}).value||'';
+  var legacy=document.getElementById('ing-fin-toggle');
+  // Los nuevos ingresos se clasifican en Gastos: no editan de nuevo el precio/las cuotas del contrato.
+  if(legacy)legacy.checked=false;
+  var notaLegado=document.getElementById('ing-impacto-legado');if(notaLegado)notaLegado.style.display='none';
+  cqIngresoToggleSecciones();
+  if(tipo&&autoSub)cqIngresoImpactoAutocompletar();
+  cqIngresoActualizarPreview();
 }
 function cqIngresoRenderObras(data){
   var conservar=[];
@@ -6094,13 +6177,23 @@ function cqIngresoActualizarPreview(){
   var usd=cqIngresoMontoUSD(ingTipo,monto,cqIngresoTC());
   if(monto>0&&cqIngresoMoneda(ingTipo)==='ars'&&!cqIngresoTC())el.textContent='U$S — (falta TC)';
   else el.textContent=fmtU(usd||0);
+  var actual=document.getElementById('ing-impacto-preview-monto');
+  if(actual)actual.textContent=el.textContent;
 }
 function cqIngresoInit(data){
   data=data||null;
   var tg=document.getElementById('ing-gastos-toggle');
   var tf=document.getElementById('ing-fin-toggle');
   if(tg)tg.checked=!!(data&&data.ingresoGastosAgregar);
+  // Las integraciones directas de registros históricos se conservan si solo se edita el ingreso.
+  // Solamente se sustituyen cuando el usuario elige explícitamente el nuevo clasificador.
   if(tf)tf.checked=!!(data&&data.ingresoFinAgregar);
+  var impacto=document.getElementById('ing-impacto-tipo'),impUnidad=document.getElementById('ing-impacto-unidad');
+  var notaLegado=document.getElementById('ing-impacto-legado');
+  if(notaLegado)notaLegado.style.display=data&&data.ingresoFinAgregar?'block':'none';
+  var tipoGuardado=String((data&&data.ingresoGastosFinTipo)||'');
+  if(impacto)impacto.value=(tipoGuardado==='precio'||tipoGuardado==='cuota')?tipoGuardado:'';
+  if(impUnidad)impUnidad.value=(data&&(data.ingresoGastosFinUnidad||data.ingresoFinUnidad))||'';
   var unidad=document.getElementById('ing-fin-unidad');
   var tipo=document.getElementById('ing-fin-tipo');
   if(unidad)unidad.value=(data&&data.ingresoFinUnidad)||'';
@@ -6112,22 +6205,34 @@ function cqIngresoInit(data){
   if(!CQ_GASTOS_CONFIG_FIREBASE&&window._cqFirebase){
     cqLoadGastosConfigFirebase().then(function(){
       cqIngresoRenderObras(data);
-      cqIngresoObraGastosChanged((data&&data.ingresoGastosRubro)||'',(data&&data.ingresoGastosSubrubro)||'');
+      var rub=(document.getElementById('ing-gastos-rubro')||{}).value||'';
+      var sub=(document.getElementById('ing-gastos-subrubro')||{}).value||'';
+      cqIngresoObraGastosChanged(rub||(data&&data.ingresoGastosRubro)||'',sub||(data&&data.ingresoGastosSubrubro)||'');
+      if(!sub)cqIngresoImpactoAutocompletar();
       cqIngresoActualizarPreview();
     }).catch(function(e){console.warn('Config Gastos para ingresos:',e);});
   }else if(window._cqFirebase){
     cqLoadGastosConfigFirebase(true).then(function(){
       cqIngresoRenderObras(data);
-      cqIngresoObraGastosChanged((data&&data.ingresoGastosRubro)||'',(data&&data.ingresoGastosSubrubro)||'');
+      var rub=(document.getElementById('ing-gastos-rubro')||{}).value||'';
+      var sub=(document.getElementById('ing-gastos-subrubro')||{}).value||'';
+      cqIngresoObraGastosChanged(rub||(data&&data.ingresoGastosRubro)||'',sub||(data&&data.ingresoGastosSubrubro)||'');
+      if(!sub)cqIngresoImpactoAutocompletar();
     }).catch(function(e){console.warn('Actualización config Gastos para ingresos:',e);});
   }
 }
 function cqIngresoReadIntegraciones(tipo,monto,fecha){
   var out={
-    ingresoGastosAgregar:false,ingresoGastosObraId:'',ingresoGastosRubro:'',ingresoGastosSubrubro:'',ingresoGastosSyncEstado:'no',ingresoGastosSyncError:'No se agregó a Gastos',
+    ingresoGastosAgregar:false,ingresoGastosObraId:'',ingresoGastosRubro:'',ingresoGastosSubrubro:'',ingresoGastosFinTipo:'',ingresoGastosFinUnidad:'',ingresoGastosSyncEstado:'no',ingresoGastosSyncError:'No se agregó a Gastos',
     ingresoFinAgregar:false,ingresoFinObraId:'',ingresoFinUnidad:'',ingresoFinTipo:'',ingresoFinMontoUsd:0,ingresoFinSyncEstado:'no',ingresoFinSyncError:'No se agregó al Resumen financiero'
   };
+  var tipoImpacto=(document.getElementById('ing-impacto-tipo')||{}).value||'';
+  var unidadImpacto=(document.getElementById('ing-impacto-unidad')||{}).value||'';
+  if(tipoImpacto&&tipoImpacto!=='precio'&&tipoImpacto!=='cuota')return {error:'Solo se pueden clasificar cobros de venta o cuotas desde un ingreso.'};
+  if(tipoImpacto&&!unidadImpacto)return {error:'Elegí la Unidad A o B para vincular el cobro al Resumen Financiero.'};
+  if(tipoImpacto&&cqIngresoMoneda(tipo)==='ars'&&!cqIngresoTC())return {error:'Falta un tipo de cambio válido para calcular el cobro en dólares.'};
   var tg=document.getElementById('ing-gastos-toggle');
+  if(tipoImpacto&&tg)tg.checked=true;
   if(tg&&tg.checked){
     if(!CQ_GASTOS_CONFIG_FIREBASE){
       try{CQ_GASTOS_CONFIG_FIREBASE=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}
@@ -6138,7 +6243,10 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
     if(!obra)return {error:'Seleccioná la obra para enviar el ingreso a Gastos.'};
     if(!rub)return {error:'Seleccioná la categoría del ingreso en Gastos.'};
     if(!sub)return {error:'Seleccioná el subrubro del ingreso en Gastos.'};
-    out.ingresoGastosAgregar=true;out.ingresoGastosObraId=obra;out.ingresoGastosRubro=rub;out.ingresoGastosSubrubro=sub;out.ingresoGastosSyncEstado='pendiente';out.ingresoGastosSyncError='';
+    if(tipoImpacto&&String(obra)==='oficina')return {error:'Un anticipo o cuota debe vincularse con una obra, no con Oficina.'};
+    out.ingresoGastosAgregar=true;out.ingresoGastosObraId=obra;out.ingresoGastosRubro=rub;out.ingresoGastosSubrubro=sub;
+    out.ingresoGastosFinTipo=tipoImpacto;out.ingresoGastosFinUnidad=tipoImpacto?unidadImpacto:'';
+    out.ingresoGastosSyncEstado='pendiente';out.ingresoGastosSyncError='';
   }
   var tf=document.getElementById('ing-fin-toggle');
   if(tf&&tf.checked){
@@ -6163,7 +6271,7 @@ function cqIngresoGastosPayload(mov,tipo){
   return {
     id:cqIngresoGastosLinkId(mov.id),createdAt:mov.creadoAt||nowISO,createdBy:mov.creadoPor||CURRENT_USER||'Caja',
     fecha:mov.fecha,cat:mov.ingresoGastosRubro,subrubro:mov.ingresoGastosSubrubro,moneda:moneda,monto:-Math.abs(Number(mov.monto)||0),tc:Number(mov.tc)||cqIngresoTC()||0,
-    nota:String(mov.desc||'Ingreso desde Caja Gerencia'),tipoMovimiento:'ingreso',updatedAt:nowISO,updatedBy:CURRENT_USER||mov.updatedPor||mov.creadoPor||'Caja',
+    nota:String(mov.desc||'Ingreso desde Caja Gerencia'),tipoMovimiento:'ingreso',finTipo:String(mov.ingresoGastosFinTipo||''),finUnidad:String(mov.ingresoGastosFinUnidad||''),updatedAt:nowISO,updatedBy:CURRENT_USER||mov.updatedPor||mov.creadoPor||'Caja',
     origen:'cq_caja_gerencia',cajaMovimientoId:String(mov.id),cajaGerenciaMovimientoId:String(mov.id),cajaCuenta:labelFondo(tipo||mov.cajaTipo||'fondo-pesos'),cajaObraId:mov.ingresoGastosObraId
   };
 }
@@ -6284,7 +6392,7 @@ function cqIngresoSyncDot(label,state,error){
   return '<span class="cq-sync-labeled"><span class="cq-sync-mini-label">'+escapeHTML(label)+'</span><span class="cq-gastos-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span></span>';
 }
 function cqIngresoSyncHTML(mov){
-  if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
+  if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoGastosFinTipo)h+=cqIngresoSyncDot('Resumen',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);else if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
 }
 function cqIngresoObraNombre(id,fallback){
   var raw=String(id||'').trim();
@@ -6302,7 +6410,9 @@ function cqIngresoDetalleIntegracion(mov){
   if(mov.ingresoGastosAgregar){
     partes.push('Gastos · '+cqIngresoObraNombre(mov.ingresoGastosObraId,mov.ingresoGastosObraLabel)+' · '+(mov.ingresoGastosSubrubro||''));
   }
-  if(mov.ingresoFinAgregar){
+  if(mov.ingresoGastosFinTipo){
+    partes.push('Resumen · Unidad '+(mov.ingresoGastosFinUnidad||'')+' · '+({precio:'Efectivo por venta',cuota:'Cuota por venta'}[mov.ingresoGastosFinTipo]||''));
+  }else if(mov.ingresoFinAgregar){
     partes.push(cqIngresoObraNombre(mov.ingresoFinObraId,mov.ingresoFinObraLabel)+' · Unidad '+(mov.ingresoFinUnidad||'')+' · '+({precio:'Precio inicial',cuota:'Cuota',comision:'Comisión'}[mov.ingresoFinTipo]||mov.ingresoFinTipo||''));
   }
   return partes.length?'<div class="cq-imputacion-detail">'+partes.map(escapeHTML).join(' &nbsp;•&nbsp; ')+'</div>':'';
