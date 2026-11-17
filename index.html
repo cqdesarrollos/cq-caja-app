@@ -2179,7 +2179,7 @@ body{overflow-x:hidden!important}
           </select></div>
           <div class="fld" id="ing-impacto-unidad-wrap"><label>Unidad</label><select id="ing-impacto-unidad"><option value="">Elegir unidad</option><option value="A">Unidad A</option><option value="B">Unidad B</option></select></div>
           <div class="fld" id="ing-venta-estado-wrap" style="display:none"><label>Venta de la unidad</label>
-            <select id="ing-venta-estado" onchange="cqIngresoEstadoVentaChanged()">
+            <select id="ing-venta-estado">
               <option value="">No modificar estado de venta</option>
               <option value="pozo">Venta en pozo</option>
               <option value="estructura">Estructura</option>
@@ -2187,8 +2187,6 @@ body{overflow-x:hidden!important}
               <option value="terminada">Finalizada / terminada</option>
               <option value="sin-vender">Sin vender</option>
             </select></div>
-          <div class="fld" id="ing-venta-fecha-wrap" style="display:none"><label>Fecha de venta</label>
-            <input type="date" id="ing-venta-fecha"></div>
           <div class="cq-ing-fin-preview" id="ing-impacto-preview"><span>Cobro real en U$S</span><strong id="ing-impacto-preview-monto">U$S 0</strong></div>
           <div class="cq-ing-impacto-hint">Elegir anticipo o cuota</div>
           <div class="cq-ing-note" id="ing-impacto-legado" style="display:none">Este ingreso ya tenía una vinculación financiera anterior. Se conservará al guardar, salvo que elijas aquí anticipo o cuota para sustituirla por un cobro real.</div>
@@ -6356,15 +6354,6 @@ function cqIngresoToggleSecciones(){
   if(pv)pv.style.display=impacto?'flex':'none';
   var ev=document.getElementById('ing-venta-estado-wrap');
   if(ev)ev.style.display=impacto?'block':'none';
-  cqIngresoEstadoVentaChanged();
-}
-function cqIngresoEstadoVentaChanged(){
-  var estado=String((document.getElementById('ing-venta-estado')||{}).value||'');
-  var tipo=String((document.getElementById('ing-impacto-tipo')||{}).value||'');
-  var fechaWrap=document.getElementById('ing-venta-fecha-wrap');
-  var fecha=document.getElementById('ing-venta-fecha');
-  if(fechaWrap)fechaWrap.style.display=(tipo&&estado&&estado!=='sin-vender')?'block':'none';
-  if(fecha&&estado==='sin-vender')fecha.value='';
 }
 function cqIngresoImpactoNorm(txt){
   return String(txt||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
@@ -6394,9 +6383,8 @@ function cqIngresoImpactoChanged(autoSub){
   // Los nuevos ingresos se clasifican en Gastos: no editan de nuevo el precio/las cuotas del contrato.
   if(legacy)legacy.checked=false;
   if(!tipo){
-    var estadoE=document.getElementById('ing-venta-estado'),fechaE=document.getElementById('ing-venta-fecha');
+    var estadoE=document.getElementById('ing-venta-estado');
     if(estadoE)estadoE.value='';
-    if(fechaE)fechaE.value='';
   }
   var notaLegado=document.getElementById('ing-impacto-legado');if(notaLegado)notaLegado.style.display='none';
   cqIngresoToggleSecciones();
@@ -6473,9 +6461,7 @@ function cqIngresoInit(data){
   if(impacto)impacto.value=(tipoGuardado==='precio'||tipoGuardado==='cuota')?tipoGuardado:'';
   if(impUnidad)impUnidad.value=(data&&(data.ingresoGastosFinUnidad||data.ingresoFinUnidad))||'';
   var estadoVenta=document.getElementById('ing-venta-estado');
-  var fechaVenta=document.getElementById('ing-venta-fecha');
   if(estadoVenta)estadoVenta.value=(data&&data.ingresoGastosVentaAplicar)?String(data.ingresoGastosVentaEtapa||'sin-vender'):'';
-  if(fechaVenta)fechaVenta.value=(data&&data.ingresoGastosVentaFecha)||'';
   var unidad=document.getElementById('ing-fin-unidad');
   var tipo=document.getElementById('ing-fin-tipo');
   if(unidad)unidad.value=(data&&data.ingresoFinUnidad)||'';
@@ -6515,9 +6501,10 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
   if(tipoImpacto&&!unidadImpacto)return {error:'Elegí la Unidad A o B para vincular el cobro al Resumen Financiero.'};
   if(tipoImpacto&&cqIngresoMoneda(tipo)==='ars'&&!cqIngresoTC())return {error:'Falta un tipo de cambio válido para calcular el cobro en dólares.'};
   var ventaEstado=String((document.getElementById('ing-venta-estado')||{}).value||'');
-  var ventaFecha=String((document.getElementById('ing-venta-fecha')||{}).value||'');
+  // La venta de la unidad usa siempre la fecha efectiva del ingreso de Caja.
+  var ventaFecha=String(fecha||'');
   if(ventaEstado&&!tipoImpacto)return {error:'Elegí primero anticipo o cuota para cargar el estado de venta.'};
-  if(ventaEstado&&ventaEstado!=='sin-vender'&&!ventaFecha)return {error:'Seleccioná la fecha de venta de la unidad.'};
+  if(ventaEstado&&ventaEstado!=='sin-vender'&&!ventaFecha)return {error:'Seleccioná la fecha del ingreso para registrar la venta de la unidad.'};
   if(ventaEstado&&ventaEstado!=='sin-vender'&&!['pozo','estructura','terminaciones','terminada'].includes(ventaEstado))return {error:'Elegí un estado de venta válido.'};
   var tg=document.getElementById('ing-gastos-toggle');
   if(tipoImpacto&&tg)tg.checked=true;
