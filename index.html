@@ -2137,18 +2137,26 @@ body{overflow-x:hidden!important}
   .cq-ing-impacto-hint{grid-column:1/-1;font-size:10px;font-weight:700;color:#678679;padding:0 1px}
   .cq-ing-fin-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#F4F7FB;border:1px solid #DFE7EF;font-size:10px;color:#5C7181;font-weight:800}
   .cq-ing-fin-preview strong{color:#173F35;font-family:'JetBrains Mono',monospace;font-size:11px}
-  #ing-impacto-bloque{border-color:#CFE2D5;background:#F4FAF6}
-  #ing-impacto-bloque .cq-ing-section-hd{background:#EFF8F2}
-  #ing-impacto-fields{grid-template-columns:minmax(0,1fr) minmax(0,0.54fr)}
-  #ing-impacto-fields select{width:100%;min-width:0}
+  /* El impacto financiero es un ajuste opcional: compacto, de bajo protagonismo y legible en móvil. */
+  #ing-impacto-bloque{margin-top:9px;border:1px solid #E2EAE4;background:#FAFBFA;border-radius:10px}
+  #ing-impacto-bloque .cq-ing-section-hd{padding:8px 11px 3px;background:transparent;border-bottom:0}
+  #ing-impacto-bloque .cq-ing-section-hd b{font-size:10px;font-weight:750;letter-spacing:.01em;color:#738578}
+  #ing-impacto-bloque .cq-ing-section-hd small{display:none}
+  #ing-impacto-fields{padding:4px 11px 9px;grid-template-columns:minmax(0,1fr);gap:6px}
+  #ing-impacto-fields > .fld{grid-column:1/-1}
+  #ing-impacto-fields > .fld:first-child label{display:none}
+  #ing-impacto-fields .fld label{font-size:9px;color:#82968A}
+  #ing-impacto-fields select{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;padding:7px 8px;height:36px;font-size:12px}
+  #ing-impacto-fields #ing-impacto-tipo{font-size:12px}
+  #ing-impacto-fields .cq-ing-impacto-hint{grid-column:1/-1;padding:0 1px;font-size:9px;font-weight:600;color:#97A89B}
   #ing-impacto-unidad-wrap{display:none}
   #ing-impacto-preview{display:none}
-  #ing-impacto-bloque .cq-ing-note{background:#EAF5EC;color:#52735C}
+  #ing-impacto-bloque .cq-ing-note{background:#F1F7F2;color:#63816D}
   @media(max-width:600px){
     #modal-ingreso .modal{width:min(96vw,620px)}
     .cq-ing-fields{grid-template-columns:1fr;padding:10px}
-    #ing-impacto-fields{grid-template-columns:1fr 0.7fr;gap:7px}
-    #ing-impacto-fields select{font-size:11.5px}
+    #ing-impacto-fields{grid-template-columns:minmax(0,1fr);padding:4px 10px 9px;gap:6px}
+    #ing-impacto-fields select{font-size:12px}
     .cq-ing-fields .full,.cq-ing-note,.cq-ing-fin-preview{grid-column:1}
   }
 </style>
