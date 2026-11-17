@@ -2015,6 +2015,18 @@ body{overflow-x:hidden!important}
         <div id="gd-reparto-total" class="reparto-total"></div></div>
       </div>
 
+      <div class="cq-ing-section" id="gd-comision-bloque">
+        <div class="cq-ing-section-hd"><span><b>Impacto en Resumen Financiero</b><small>Registrar una comisión efectivamente pagada</small></span></div>
+        <div class="cq-ing-fields">
+          <div class="fld full"><label>Tipo de salida</label><select id="gd-comision-impacto" onchange="cqComisionCajaChanged('gd')">
+            <option value="">Movimiento normal (sin vincular)</option>
+            <option value="comision">Comisión pagada (resta)</option>
+          </select></div>
+          <div class="fld full" id="gd-comision-obra-wrap" style="display:none"><label>Obra</label>
+            <select id="gd-comision-obra"><option value="">Seleccionar obra...</option></select></div>
+          <div class="cq-ing-note" id="gd-comision-ayuda" style="display:none">Se envía automáticamente a Gastos como comisión pagada. Se descuenta del flujo financiero en la fecha del gasto, sin duplicarse como costo de obra.</div>
+        </div>
+      </div>
     </div>
     <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-gasto-deuda')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarGastoDeuda()">Guardar</button></div>
   </div>
@@ -2072,6 +2084,18 @@ body{overflow-x:hidden!important}
         <div id="gf-reparto-total" class="reparto-total"></div></div>
       </div>
 
+      <div class="cq-ing-section" id="gf-comision-bloque">
+        <div class="cq-ing-section-hd"><span><b>Impacto en Resumen Financiero</b><small>Registrar una comisión efectivamente pagada</small></span></div>
+        <div class="cq-ing-fields">
+          <div class="fld full"><label>Tipo de salida</label><select id="gf-comision-impacto" onchange="cqComisionCajaChanged('gf')">
+            <option value="">Movimiento normal (sin vincular)</option>
+            <option value="comision">Comisión pagada (resta)</option>
+          </select></div>
+          <div class="fld full" id="gf-comision-obra-wrap" style="display:none"><label>Obra</label>
+            <select id="gf-comision-obra"><option value="">Seleccionar obra...</option></select></div>
+          <div class="cq-ing-note" id="gf-comision-ayuda" style="display:none">Se envía automáticamente a Gastos como comisión pagada. Se descuenta del flujo financiero en la fecha del gasto, sin duplicarse como costo de obra.</div>
+        </div>
+      </div>
     </div>
     <div class="mfooter"><button class="btn btn-s btn-sm" onclick="closeModal('modal-gasto-fondo')">Cancelar</button><button class="btn btn-p btn-sm" onclick="guardarGastoFondo()">Guardar</button></div>
   </div>
@@ -2106,6 +2130,7 @@ body{overflow-x:hidden!important}
   .cq-ing-fields .fld{margin:0}
   .cq-ing-fields .full{grid-column:1/-1}
   .cq-ing-note{grid-column:1/-1;padding:8px 10px;border-radius:9px;background:#F3F7F4;color:#6F877B;font-size:9.5px;line-height:1.35;font-weight:700}
+  .cq-ing-impacto-hint{grid-column:1/-1;font-size:10px;font-weight:700;color:#678679;padding:0 1px}
   .cq-ing-fin-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#F4F7FB;border:1px solid #DFE7EF;font-size:10px;color:#5C7181;font-weight:800}
   .cq-ing-fin-preview strong{color:#173F35;font-family:'JetBrains Mono',monospace;font-size:11px}
   #ing-impacto-bloque{border-color:#CFE2D5;background:#F4FAF6}
@@ -2141,8 +2166,19 @@ body{overflow-x:hidden!important}
             <option value="cuota">Cuota por venta</option>
           </select></div>
           <div class="fld" id="ing-impacto-unidad-wrap"><label>Unidad</label><select id="ing-impacto-unidad"><option value="">Elegir unidad</option><option value="A">Unidad A</option><option value="B">Unidad B</option></select></div>
+          <div class="fld" id="ing-venta-estado-wrap" style="display:none"><label>Venta de la unidad</label>
+            <select id="ing-venta-estado" onchange="cqIngresoEstadoVentaChanged()">
+              <option value="">No modificar estado de venta</option>
+              <option value="pozo">Venta en pozo</option>
+              <option value="estructura">Estructura</option>
+              <option value="terminaciones">Terminaciones</option>
+              <option value="terminada">Finalizada / terminada</option>
+              <option value="sin-vender">Sin vender</option>
+            </select></div>
+          <div class="fld" id="ing-venta-fecha-wrap" style="display:none"><label>Fecha de venta</label>
+            <input type="date" id="ing-venta-fecha"></div>
           <div class="cq-ing-fin-preview" id="ing-impacto-preview"><span>Cobro real en U$S</span><strong id="ing-impacto-preview-monto">U$S 0</strong></div>
-          <div class="cq-ing-note">Al elegir anticipo o cuota, se activa el envío a Gastos. Seleccioná allí la obra; el Resumen Financiero tomará la fecha real del ingreso sin duplicar la venta pactada. Las comisiones pagadas se cargan como gasto.</div>
+          <div class="cq-ing-impacto-hint">Elegir anticipo o cuota</div>
           <div class="cq-ing-note" id="ing-impacto-legado" style="display:none">Este ingreso ya tenía una vinculación financiera anterior. Se conservará al guardar, salvo que elijas aquí anticipo o cuota para sustituirla por un cobro real.</div>
         </div>
       </div>
@@ -5080,6 +5116,7 @@ function cqSetUsdPurpose(prefix,purpose){
   }
 
   if(isUsd && purpose==='cambio')cqFxRecalc(prefix);
+  if(document.getElementById(prefix+'-comision-impacto'))cqComisionCajaChanged(prefix);
 }
 function cqPrepareUsdPurpose(prefix,isUsd){
   var w=document.getElementById(prefix+'-usd-purpose-wrap');if(w)w.style.display=isUsd?'block':'none';
@@ -5207,6 +5244,7 @@ function openGastoDeuda(moneda){
   fillDatalists();
   cqImpInit('gd',null);
   cqPrepareUsdPurpose('gd',moneda==='usd');
+  cqComisionCajaInit('gd',null);
   openModal('modal-gasto-deuda');
 }
 function selectPayer(btn){
@@ -5238,6 +5276,7 @@ function openEditDeuda(moneda,id){
   }else{
     cqPrepareUsdPurpose('gd',false);
   }
+  cqComisionCajaInit('gd',g);
   openModal('modal-gasto-deuda');
 }
 async function guardarGastoDeuda(){
@@ -5254,6 +5293,7 @@ async function guardarGastoDeuda(){
   var esCambio=esUsd&&cqUsdPurpose.gd==='cambio';
   var esPagoUsd=esUsd&&cqUsdPurpose.gd==='pago';
   var fx=esUsd?cqFxRead('gd'):null;if(fx&&fx.error){alert(fx.error);return;}
+  var comisionCaja=cqComisionCajaRead('gd');if(comisionCaja.error){alert(comisionCaja.error);return;}
   var imp=esCambio?{}:cqImpRead('gd'); if(imp.error){alert(imp.error);return;}
   var tc=esUsd?fx.tc:getLastTC();
   if(esUsd&&tc>0)cqActualizarUltimoTCDesdeCarga(tc);
@@ -5262,7 +5302,7 @@ async function guardarGastoDeuda(){
     var idx=lista.findIndex(function(x){return x.id===gdEditId;});
     if(idx>=0){
       oldSync=JSON.parse(JSON.stringify(lista[idx]));
-      lista[idx]=Object.assign({},lista[idx],{monto:monto,desc:desc,fecha:fecha,pagador:pagador,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},imp,(tc?{tc:tc}:{}));
+      lista[idx]=Object.assign({},lista[idx],{monto:monto,desc:desc,fecha:fecha,pagador:pagador,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},imp,comisionCaja,(tc?{tc:tc}:{}));
       movSync=lista[idx];
       if(esUsd){
         if(esCambio){
@@ -5280,7 +5320,7 @@ async function guardarGastoDeuda(){
     toast('✓ Gasto actualizado');
     persist('Se modificó un gasto de '+fmtMon(gdMoneda,monto)+' en '+labelDeuda(gdMoneda));
   } else {
-    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
+    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,pagador:pagador,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp,comisionCaja);
     if(tc) nuevo.tc=tc;
     if(esCambio){
       nuevo.desc='Cambio de moneda';
@@ -5323,22 +5363,31 @@ async function guardarGastoDeuda(){
     cqLanzarSyncMovimiento(movSync,labelDeuda(gdMoneda),oldSync);
     cqLanzarSyncMaterialesCaja(movSync,oldSync);
   }
+  if(movSync&&(movSync.comisionCajaResumen||(oldSync&&oldSync.comisionCajaResumen))){
+    try{await cqComisionCajaSync(movSync,oldSync,gdMoneda);
+      cqCajaPatchMovimientoActual(movSync.id,{comisionCajaSyncEstado:movSync.comisionCajaSyncEstado,comisionCajaSyncError:movSync.comisionCajaSyncError});
+      persist();renderDeuda(gdMoneda);
+    }catch(e){console.warn('Caja → Comisión financiera',e);toast('Gasto guardado, pero no se pudo enviar la comisión a Gastos');}
+  }
 }
-function borrarDeuda(moneda,id){
+async function borrarDeuda(moneda,id){
   var lista=deudaList(moneda);
   var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+fmtMon(moneda,mov.monto)) : 'este movimiento';
-  if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
+  if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\\n\\nVas a eliminar: '+detalle+'\\n\\nEsta acción no se puede deshacer.')) return;
+  if(!mov)return;
+  // Borrar primero los vínculos, para no dejar comisiones huérfanas.
+  if(!await cqComisionCajaEliminar(mov,moneda))return;
+  if(moneda==='pesos'){
+    if(!await cqEliminarVinculosGastos(mov))return;
+    if(!await cqEliminarVinculosMateriales(mov))return;
+  }
   var idx=lista.findIndex(function(x){return x.id===id;});
   if(idx>=0) lista.splice(idx,1);
   if(mov&&(mov.cambioMoneda||mov.pagoUsdConvertido||mov.usdPurpose==='cambio'))cqBorrarIngresosCambio(mov.id);
-  persist('Se eliminó un movimiento en '+labelDeuda(moneda));toast('Eliminado');renderDeuda(moneda);
-  if(moneda==='pesos'&&mov){
-    cqEliminarVinculosGastos(mov);
-    cqEliminarVinculosMateriales(mov);
-  }
+  persist('Se eliminó un movimiento en '+labelDeuda(moneda));
+  toast('Eliminado');renderDeuda(moneda);
 }
-
 
 var ppMoneda=null;
 var ppEditId=null;
@@ -5924,6 +5973,7 @@ function openGastoFondo(tipo){
   if(ccCheckNew)ccCheckNew.checked=false;
   cqImpToggleAgregar('gf');
   cqPrepareUsdPurpose('gf',tipo==='fondo-usd'||tipo==='santander-usd');
+  cqComisionCajaInit('gf',null);
   openModal('modal-gasto-fondo');
 }
 function openEditFondoMov(tipo,id){
@@ -5961,6 +6011,7 @@ function openEditFondoMov(tipo,id){
   var ccCheckEdit=document.getElementById('gf-ingreso-caja-chica');
   if(ccCheckEdit)ccCheckEdit.checked=!!m.cajaChicaIngreso;
   cqImpToggleAgregar('gf');
+  cqComisionCajaInit('gf',m);
   openModal('modal-gasto-fondo');
 }
 async function guardarGastoFondo(){
@@ -5977,6 +6028,7 @@ async function guardarGastoFondo(){
   var conceptoPagoUsd=esPagoUsd?String((document.getElementById('gf-pago-concepto')||{}).value||'').trim():'';
   if(esPagoUsd&&!conceptoPagoUsd){alert('Ingresá el concepto del pago.');return;}
   var fx=esCambio?cqFxRead('gf'):null;if(fx&&fx.error){alert(fx.error);return;}
+  var comisionCaja=cqComisionCajaRead('gf');if(comisionCaja.error){alert(comisionCaja.error);return;}
   var imp=esUsd?{}:cqImpRead('gf'); if(imp.error){alert(imp.error);return;}
   var ingresoCajaChicaSolicitado=(!esUsd && gfTipo==='fondo-pesos')?cqCajaChicaDebeIngresar():false;
   var cfg=fondoConfig(gfTipo);
@@ -5989,7 +6041,7 @@ async function guardarGastoFondo(){
     if(idx>=0){
       oldSync=JSON.parse(JSON.stringify(DB[cfg.movs][idx]));
       var descGuardar=esPagoUsd?conceptoPagoUsd:desc;
-      DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:descGuardar,fecha:fecha,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},imp,(tc?{tc:tc}:{}));
+      DB[cfg.movs][idx]=Object.assign({},DB[cfg.movs][idx],{monto:monto,desc:descGuardar,fecha:fecha,updatedPor:CURRENT_USER,updatedAt:new Date().toISOString()},imp,comisionCaja,(tc?{tc:tc}:{}));
       movSync=DB[cfg.movs][idx];
       if(esCambio){
         movSync.desc='Cambio de moneda';
@@ -6013,7 +6065,7 @@ async function guardarGastoFondo(){
     toast('✓ Gasto actualizado');
     persist('Se modificó un gasto de '+cfg.fmt(monto)+' en '+labelFondo(gfTipo));
   } else {
-    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp);
+    var nuevo=Object.assign({id:cqNuevoMovimientoId(),tipo:'gasto',monto:monto,desc:desc,fecha:fecha,creadoPor:CURRENT_USER,creadoAt:new Date().toISOString()},imp,comisionCaja);
     if(tc) nuevo.tc=tc;
     if(esCambio){
       nuevo.desc='Cambio de moneda';
@@ -6061,11 +6113,129 @@ async function guardarGastoFondo(){
   if(tipoSync==='fondo-pesos'&&movSync){
     await cqSyncIngresoCajaChicaDesdeFondo(movSync,ingresoCajaChicaSolicitado);
   }
+  if(movSync&&(movSync.comisionCajaResumen||(oldSync&&oldSync.comisionCajaResumen))){
+    try{await cqComisionCajaSync(movSync,oldSync,tipoSync);
+      cqCajaPatchMovimientoActual(movSync.id,{comisionCajaSyncEstado:movSync.comisionCajaSyncEstado,comisionCajaSyncError:movSync.comisionCajaSyncError});
+      persist();renderFondo(tipoSync);
+    }catch(e){console.warn('Caja → Comisión financiera',e);toast('Gasto guardado, pero no se pudo enviar la comisión a Gastos');}
+  }
 }
 
 // ═══════════════════════════════════════════
 // INGRESOS DE CAJA → GASTOS / RESUMEN FINANCIERO
 // ═══════════════════════════════════════════
+
+// Comisión pagada desde las salidas de Caja: una única imputación real a Gastos.
+function cqComisionCajaEsUsd(prefix){
+  return prefix==='gd'?gdMoneda==='usd':gfTipo==='fondo-usd'||gfTipo==='santander-usd';
+}
+function cqComisionCajaLlenarObras(prefix,data){
+  var sel=document.getElementById(prefix+'-comision-obra');if(!sel)return;
+  var value=data&&data.comisionCajaObraId?String(data.comisionCajaObraId):sel.value;
+  var obras=cqImputacionObras(value?[value]:[]).filter(function(o){return !['oficina','acopio','postobra'].includes(String(o.id));});
+  sel.innerHTML='<option value="">Seleccionar obra...</option>'+obras.map(function(o){
+    return '<option value="'+escapeHTML(String(o.id))+'">'+escapeHTML(String(o.label||o.short||o.id))+'</option>';
+  }).join('');
+  if(value&&obras.some(function(o){return String(o.id)===value;}))sel.value=value;
+}
+function cqComisionCajaChanged(prefix){
+  var modo=String((document.getElementById(prefix+'-comision-impacto')||{}).value||'');
+  var esUsd=cqComisionCajaEsUsd(prefix);
+  var cambio=esUsd&&cqUsdPurpose[prefix]==='cambio';
+  var activo=modo==='comision'&&!cambio;
+  if(cambio&&modo){
+    var sel=document.getElementById(prefix+'-comision-impacto');if(sel)sel.value='';
+    activo=false;
+  }
+  var wrap=document.getElementById(prefix+'-comision-obra-wrap');
+  if(wrap)wrap.style.display=activo?'block':'none';
+  var ayuda=document.getElementById(prefix+'-comision-ayuda');
+  if(ayuda)ayuda.style.display=activo?'block':'none';
+  var bloque=document.getElementById(prefix+'-comision-bloque');
+  if(bloque)bloque.style.display=cambio?'none':'';
+  var check=document.getElementById(prefix+'-agregar-gastos');
+  if(check){
+    if(activo&&!check.disabled){
+      check.dataset.cqAntesComision=check.checked?'1':'0';
+      check.checked=false;check.disabled=true;cqImpToggleAgregar(prefix);
+    }else if(!activo&&check.disabled){
+      check.disabled=false;check.checked=check.dataset.cqAntesComision!=='0';
+      cqImpToggleAgregar(prefix);
+    }
+  }
+  if(activo&&prefix==='gf'){
+    var cc=document.getElementById('gf-ingreso-caja-chica');if(cc)cc.checked=false;
+    var ccRow=document.getElementById('gf-caja-chica-row');if(ccRow)ccRow.classList.remove('show');
+  }
+  var fecha=document.getElementById(prefix+'-fecha');
+  if(fecha&&prefix==='gf'&&esUsd){
+    var frow=fecha.closest('.fld');
+    if(frow)frow.style.display=activo?'':(cqUsdPurpose.gf==='pago'?'none':'');
+  }
+}
+function cqComisionCajaInit(prefix,data){
+  var sel=document.getElementById(prefix+'-comision-impacto');
+  if(sel)sel.value=data&&data.comisionCajaResumen?'comision':'';
+  var check=document.getElementById(prefix+'-agregar-gastos');
+  if(check)check.disabled=false;
+  cqComisionCajaLlenarObras(prefix,data);
+  cqComisionCajaChanged(prefix);
+  if(window._cqFirebase){
+    cqLoadGastosConfigFirebase(true).then(function(){
+      // Mantener la obra elegida si la configuración se actualizó mientras se abría el modal.
+      cqComisionCajaLlenarObras(prefix,data);
+    }).catch(function(e){console.warn('Obras para comisión de Caja:',e);});
+  }
+}
+function cqComisionCajaRead(prefix){
+  var modo=String((document.getElementById(prefix+'-comision-impacto')||{}).value||'');
+  var out={comisionCajaResumen:false,comisionCajaObraId:'',comisionCajaSyncEstado:'no',comisionCajaSyncError:''};
+  if(!modo)return out;
+  if(modo!=='comision')return {error:'Tipo de impacto financiero inválido.'};
+  if(cqComisionCajaEsUsd(prefix)&&cqUsdPurpose[prefix]==='cambio')
+    return {error:'Una comisión pagada debe registrarse como Pago y no como Cambio de moneda.'};
+  var obra=String((document.getElementById(prefix+'-comision-obra')||{}).value||'');
+  if(!obra||['oficina','acopio','postobra'].includes(obra))return {error:'Seleccioná la obra de la comisión.'};
+  out.comisionCajaResumen=true;out.comisionCajaObraId=obra;
+  out.comisionCajaSyncEstado='pendiente';
+  return out;
+}
+function cqComisionCajaPayload(mov,tipo){
+  var moneda=['usd','fondo-usd','santander-usd'].includes(String(tipo))?'usd':'ars';
+  var ahora=new Date().toISOString();
+  return {id:'caja_comision_'+String(mov.id),activo:true,
+    createdAt:mov.creadoAt||ahora,createdBy:mov.creadoPor||CURRENT_USER||'Caja',
+    fecha:String(mov.fecha||''),cat:'lote',subrubro:'Comisión',
+    moneda:moneda,monto:Math.abs(Number(mov.monto)||0),tc:Number(mov.tc)||Number(getLastTC())||0,
+    nota:String(mov.desc||'Comisión pagada desde Caja Gerencia'),
+    finTipo:'comision',finUnidad:'',tipoMovimiento:'gasto',
+    updatedAt:ahora,updatedBy:CURRENT_USER||mov.updatedPor||mov.creadoPor||'Caja',
+    origen:'cq_caja_gerencia',cajaMovimientoId:String(mov.id),
+    cajaGerenciaMovimientoId:String(mov.id),cajaObraId:mov.comisionCajaObraId,
+    cajaCuenta:String(tipo||'Caja')};
+}
+async function cqComisionCajaSync(mov,oldMov,tipo){
+  var nuevo=!!(mov&&mov.comisionCajaResumen),anterior=!!(oldMov&&oldMov.comisionCajaResumen);
+  if(!nuevo&&!anterior)return;
+  try{
+    if(anterior&&(!nuevo||String(oldMov.comisionCajaObraId)!==String(mov.comisionCajaObraId))){
+      await cqUpsertGastoObra(oldMov.comisionCajaObraId,cqComisionCajaPayload(oldMov,tipo),true);
+    }
+    if(nuevo){
+      await cqUpsertGastoObra(mov.comisionCajaObraId,cqComisionCajaPayload(mov,tipo),false);
+      mov.comisionCajaSyncEstado='ok';mov.comisionCajaSyncError='';
+    }else if(mov){mov.comisionCajaSyncEstado='no';mov.comisionCajaSyncError='';}
+  }catch(e){
+    if(mov){mov.comisionCajaSyncEstado='error';mov.comisionCajaSyncError=String(e&&e.message||e);}
+    throw e;
+  }
+}
+async function cqComisionCajaEliminar(mov,tipo){
+  if(!mov||!mov.comisionCajaResumen)return true;
+  try{await cqUpsertGastoObra(mov.comisionCajaObraId,cqComisionCajaPayload(mov,tipo),true);return true;}
+  catch(e){console.warn('Error eliminando comisión de Gastos:',e);toast('No se pudo eliminar la comisión de Gastos. Caja no se borró.');return false;}
+}
+
 function cqIngresoMoneda(tipo){
   return (tipo==='fondo-usd'||tipo==='santander-usd')?'usd':'ars';
 }
@@ -6092,6 +6262,17 @@ function cqIngresoToggleSecciones(){
   var uw=document.getElementById('ing-impacto-unidad-wrap'),pv=document.getElementById('ing-impacto-preview');
   if(uw)uw.style.display=impacto?'block':'none';
   if(pv)pv.style.display=impacto?'flex':'none';
+  var ev=document.getElementById('ing-venta-estado-wrap');
+  if(ev)ev.style.display=impacto?'block':'none';
+  cqIngresoEstadoVentaChanged();
+}
+function cqIngresoEstadoVentaChanged(){
+  var estado=String((document.getElementById('ing-venta-estado')||{}).value||'');
+  var tipo=String((document.getElementById('ing-impacto-tipo')||{}).value||'');
+  var fechaWrap=document.getElementById('ing-venta-fecha-wrap');
+  var fecha=document.getElementById('ing-venta-fecha');
+  if(fechaWrap)fechaWrap.style.display=(tipo&&estado&&estado!=='sin-vender')?'block':'none';
+  if(fecha&&estado==='sin-vender')fecha.value='';
 }
 function cqIngresoImpactoNorm(txt){
   return String(txt||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
@@ -6120,6 +6301,11 @@ function cqIngresoImpactoChanged(autoSub){
   var legacy=document.getElementById('ing-fin-toggle');
   // Los nuevos ingresos se clasifican en Gastos: no editan de nuevo el precio/las cuotas del contrato.
   if(legacy)legacy.checked=false;
+  if(!tipo){
+    var estadoE=document.getElementById('ing-venta-estado'),fechaE=document.getElementById('ing-venta-fecha');
+    if(estadoE)estadoE.value='';
+    if(fechaE)fechaE.value='';
+  }
   var notaLegado=document.getElementById('ing-impacto-legado');if(notaLegado)notaLegado.style.display='none';
   cqIngresoToggleSecciones();
   if(tipo&&autoSub)cqIngresoImpactoAutocompletar();
@@ -6194,6 +6380,10 @@ function cqIngresoInit(data){
   var tipoGuardado=String((data&&data.ingresoGastosFinTipo)||'');
   if(impacto)impacto.value=(tipoGuardado==='precio'||tipoGuardado==='cuota')?tipoGuardado:'';
   if(impUnidad)impUnidad.value=(data&&(data.ingresoGastosFinUnidad||data.ingresoFinUnidad))||'';
+  var estadoVenta=document.getElementById('ing-venta-estado');
+  var fechaVenta=document.getElementById('ing-venta-fecha');
+  if(estadoVenta)estadoVenta.value=(data&&data.ingresoGastosVentaAplicar)?String(data.ingresoGastosVentaEtapa||'sin-vender'):'';
+  if(fechaVenta)fechaVenta.value=(data&&data.ingresoGastosVentaFecha)||'';
   var unidad=document.getElementById('ing-fin-unidad');
   var tipo=document.getElementById('ing-fin-tipo');
   if(unidad)unidad.value=(data&&data.ingresoFinUnidad)||'';
@@ -6224,6 +6414,7 @@ function cqIngresoInit(data){
 function cqIngresoReadIntegraciones(tipo,monto,fecha){
   var out={
     ingresoGastosAgregar:false,ingresoGastosObraId:'',ingresoGastosRubro:'',ingresoGastosSubrubro:'',ingresoGastosFinTipo:'',ingresoGastosFinUnidad:'',ingresoGastosSyncEstado:'no',ingresoGastosSyncError:'No se agregó a Gastos',
+    ingresoGastosVentaAplicar:false,ingresoGastosVentaEtapa:'',ingresoGastosVentaFecha:'',ingresoGastosVentaSyncEstado:'no',ingresoGastosVentaSyncError:'',
     ingresoFinAgregar:false,ingresoFinObraId:'',ingresoFinUnidad:'',ingresoFinTipo:'',ingresoFinMontoUsd:0,ingresoFinSyncEstado:'no',ingresoFinSyncError:'No se agregó al Resumen financiero'
   };
   var tipoImpacto=(document.getElementById('ing-impacto-tipo')||{}).value||'';
@@ -6231,6 +6422,11 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
   if(tipoImpacto&&tipoImpacto!=='precio'&&tipoImpacto!=='cuota')return {error:'Solo se pueden clasificar cobros de venta o cuotas desde un ingreso.'};
   if(tipoImpacto&&!unidadImpacto)return {error:'Elegí la Unidad A o B para vincular el cobro al Resumen Financiero.'};
   if(tipoImpacto&&cqIngresoMoneda(tipo)==='ars'&&!cqIngresoTC())return {error:'Falta un tipo de cambio válido para calcular el cobro en dólares.'};
+  var ventaEstado=String((document.getElementById('ing-venta-estado')||{}).value||'');
+  var ventaFecha=String((document.getElementById('ing-venta-fecha')||{}).value||'');
+  if(ventaEstado&&!tipoImpacto)return {error:'Elegí primero anticipo o cuota para cargar el estado de venta.'};
+  if(ventaEstado&&ventaEstado!=='sin-vender'&&!ventaFecha)return {error:'Seleccioná la fecha de venta de la unidad.'};
+  if(ventaEstado&&ventaEstado!=='sin-vender'&&!['pozo','estructura','terminaciones','terminada'].includes(ventaEstado))return {error:'Elegí un estado de venta válido.'};
   var tg=document.getElementById('ing-gastos-toggle');
   if(tipoImpacto&&tg)tg.checked=true;
   if(tg&&tg.checked){
@@ -6247,6 +6443,12 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
     out.ingresoGastosAgregar=true;out.ingresoGastosObraId=obra;out.ingresoGastosRubro=rub;out.ingresoGastosSubrubro=sub;
     out.ingresoGastosFinTipo=tipoImpacto;out.ingresoGastosFinUnidad=tipoImpacto?unidadImpacto:'';
     out.ingresoGastosSyncEstado='pendiente';out.ingresoGastosSyncError='';
+    if(tipoImpacto&&ventaEstado){
+      out.ingresoGastosVentaAplicar=true;
+      out.ingresoGastosVentaEtapa=ventaEstado;
+      out.ingresoGastosVentaFecha=ventaEstado==='sin-vender'?'':ventaFecha;
+      out.ingresoGastosVentaSyncEstado='pendiente';
+    }
   }
   var tf=document.getElementById('ing-fin-toggle');
   if(tf&&tf.checked){
@@ -6264,6 +6466,88 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
   }
   return out;
 }
+
+// Estado y fecha de venta enviados desde Caja. No modifican los importes pactados.
+function cqCajaEntradaVentaEstado(mov){
+  if(!mov||!mov.ingresoGastosAgregar||!mov.ingresoGastosVentaAplicar)return null;
+  var etapa=String(mov.ingresoGastosVentaEtapa||'');
+  if(!['pozo','estructura','terminaciones','terminada','sin-vender'].includes(etapa))return null;
+  return {movimientoId:String(mov.id),unidad:String(mov.ingresoGastosFinUnidad||''),
+    etapa:etapa==='sin-vender'?'':etapa,fechaVenta:etapa==='sin-vender'?'':String(mov.ingresoGastosVentaFecha||''),
+    creadoAt:String(mov.creadoAt||''),actualizadoAt:String(mov.updatedAt||new Date().toISOString())};
+}
+async function cqCajaActualizarEstadoVenta(obraId,eliminar,agregar){
+  if(!obraId)return;
+  var f=window._cqFirebase;
+  if(!f||!f.runTransaction)throw new Error('Firebase no está disponible para actualizar la venta');
+  await f.runTransaction(f.db,async function(tx){
+    var ref=f.doc(f.db,'gastos',obraId),snap=await tx.get(ref);
+    var data=snap.exists()?(snap.data()||{}):{gastos:[],financiero:{}};
+    var fin=data.financiero&&typeof data.financiero==='object'?Object.assign({},data.financiero):{};
+    var units=fin.unidades&&typeof fin.unidades==='object'?Object.assign({},fin.unidades):{};
+    var records=Array.isArray(fin.cajaGerenciaVentas)?fin.cajaGerenciaVentas.slice():[];
+    var bases=fin.cajaGerenciaVentasBase&&typeof fin.cajaGerenciaVentasBase==='object'?Object.assign({},fin.cajaGerenciaVentasBase):{};
+    var afectadas=new Set();
+    if(eliminar&&['A','B'].includes(eliminar.unidad))afectadas.add(eliminar.unidad);
+    if(agregar&&['A','B'].includes(agregar.unidad))afectadas.add(agregar.unidad);
+    // Conservar la referencia original del estado manual antes del primer cambio en Caja.
+    afectadas.forEach(function(k){
+      var u=units[k]&&typeof units[k]==='object'?Object.assign({},units[k]):{};
+      var anteriores=records.filter(function(r){return r&&r.unidad===k;});
+      if(!anteriores.length&&agregar&&agregar.unidad===k&&!bases[k])
+        bases[k]={etapa:String(u.etapa||''),fechaVenta:String(u.fechaVenta||'')};
+      units[k]=u;
+    });
+    if(eliminar)records=records.filter(function(r){return String(r&&r.movimientoId)!==String(eliminar.movimientoId);});
+    if(agregar){
+      records=records.filter(function(r){return String(r&&r.movimientoId)!==String(agregar.movimientoId);});
+      records.push(agregar);
+    }
+    afectadas.forEach(function(k){
+      var u=units[k],vigentes=records.filter(function(r){return r&&r.unidad===k;})
+        .sort(function(a,b){return String(a.actualizadoAt||a.creadoAt||'').localeCompare(String(b.actualizadoAt||b.creadoAt||''));});
+      var ultimo=vigentes.length?vigentes[vigentes.length-1]:null;
+      var forzar=!!(agregar&&agregar.unidad===k);
+      var anteriorId=String(u.cqCajaVentaMovimientoId||'');
+      var anteriorRegistro=eliminar&&String(eliminar.movimientoId)===anteriorId?eliminar:null;
+      var coincideAnterior=!anteriorRegistro||(String(u.etapa||'')===String(anteriorRegistro.etapa||'')&&String(u.fechaVenta||'')===String(anteriorRegistro.fechaVenta||''));
+      // No pisar un cambio manual posterior en Gastos al borrar un movimiento.
+      if(!forzar&&anteriorRegistro&&!coincideAnterior){
+        delete u.cqCajaVentaMovimientoId;
+        if(!vigentes.length)delete bases[k];
+        return;
+      }
+      if(forzar||anteriorRegistro){
+        var siguiente=ultimo||(bases[k]||{etapa:'',fechaVenta:''});
+        u.etapa=String(siguiente.etapa||'');
+        u.fechaVenta=u.etapa?String(siguiente.fechaVenta||''):'';
+        if(ultimo)u.cqCajaVentaMovimientoId=String(ultimo.movimientoId);
+        else delete u.cqCajaVentaMovimientoId;
+      }
+      if(!vigentes.length)delete bases[k];
+    });
+    fin.unidades=units;fin.cajaGerenciaVentas=records;fin.cajaGerenciaVentasBase=bases;
+    data.financiero=fin;data.updatedAt=new Date().toISOString();
+    tx.set(ref,data);
+  });
+}
+async function cqSyncIngresoEstadoVenta(mov,oldMov){
+  var actual=cqCajaEntradaVentaEstado(mov),anterior=cqCajaEntradaVentaEstado(oldMov);
+  if(!actual&&!anterior)return;
+  try{
+    if(anterior&&actual&&String(oldMov.ingresoGastosObraId)===String(mov.ingresoGastosObraId)){
+      await cqCajaActualizarEstadoVenta(mov.ingresoGastosObraId,anterior,actual);
+    }else{
+      if(anterior)await cqCajaActualizarEstadoVenta(oldMov.ingresoGastosObraId,anterior,null);
+      if(actual)await cqCajaActualizarEstadoVenta(mov.ingresoGastosObraId,null,actual);
+    }
+    if(mov){mov.ingresoGastosVentaSyncEstado=actual?'ok':'no';mov.ingresoGastosVentaSyncError='';}
+  }catch(e){
+    if(mov){mov.ingresoGastosVentaSyncEstado='error';mov.ingresoGastosVentaSyncError=String(e&&e.message||e);}
+    throw e;
+  }
+}
+
 function cqIngresoGastosLinkId(movId){return 'caja_ingreso_'+String(movId);}
 function cqIngresoGastosPayload(mov,tipo){
   var nowISO=new Date().toISOString();
@@ -6384,6 +6668,8 @@ async function cqEliminarIngresoIntegraciones(mov,tipo){
   try{
     if(mov.ingresoGastosAgregar)await cqUpsertGastoObra(mov.ingresoGastosObraId,cqIngresoGastosPayload(mov,tipo),true);
     if(mov.ingresoFinAgregar)await cqActualizarFinancieroDesdeCaja(mov.ingresoFinObraId,cqIngresoFinEntry(mov,tipo),null);
+    var ventaActual=cqCajaEntradaVentaEstado(mov);
+    if(ventaActual)await cqCajaActualizarEstadoVenta(mov.ingresoGastosObraId,ventaActual,null);
     return true;
   }catch(e){console.warn('No se pudieron quitar integraciones del ingreso',e);toast('No se pudieron quitar los vínculos del ingreso. Caja no se borró.');return false;}
 }
@@ -6392,7 +6678,7 @@ function cqIngresoSyncDot(label,state,error){
   return '<span class="cq-sync-labeled"><span class="cq-sync-mini-label">'+escapeHTML(label)+'</span><span class="cq-gastos-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span></span>';
 }
 function cqIngresoSyncHTML(mov){
-  if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoGastosFinTipo)h+=cqIngresoSyncDot('Resumen',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);else if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
+  if(!mov)return '';var h='';if(mov.ingresoGastosAgregar)h+=cqIngresoSyncDot('Gastos',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);if(mov.ingresoGastosFinTipo)h+=cqIngresoSyncDot('Resumen',mov.ingresoGastosSyncEstado,mov.ingresoGastosSyncError);else if(mov.ingresoFinAgregar)h+=cqIngresoSyncDot('Resumen',mov.ingresoFinSyncEstado,mov.ingresoFinSyncError);if(mov.ingresoGastosVentaAplicar)h+=cqIngresoSyncDot('Venta',mov.ingresoGastosVentaSyncEstado,mov.ingresoGastosVentaSyncError);return h?'<span class="cq-sync-pair">'+h+'</span>':'';
 }
 function cqIngresoObraNombre(id,fallback){
   var raw=String(id||'').trim();
@@ -6474,6 +6760,7 @@ async function guardarIngreso(){
   var huboError=false;
   try{await cqSyncIngresoConGastos(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Gastos',e);toast('Ingreso guardado, pero no se pudo sincronizar con Gastos');}
   try{await cqSyncIngresoFinanciero(movSync,ingTipo,oldMov,ingTipo);}catch(e){huboError=true;console.warn('Ingreso Caja → Resumen financiero',e);toast('Ingreso guardado, pero no se pudo sincronizar con Resumen financiero');}
+  try{await cqSyncIngresoEstadoVenta(movSync,oldMov);}catch(e){huboError=true;console.warn('Ingreso Caja → Estado de venta',e);toast('Ingreso guardado, pero no se pudo actualizar estado/fecha de venta');}
   persist();renderFondo(ingTipo);
   if(!huboError&&(movSync.ingresoGastosAgregar||movSync.ingresoFinAgregar))toast('✓ Ingreso sincronizado');
 }
@@ -6489,7 +6776,11 @@ async function borrarFondoMov(tipo,id){
   if(mov.tipo==='ingreso'){
     var okIng=await cqEliminarIngresoIntegraciones(mov,tipo);
     if(!okIng)return;
-  }else if((tipo==='fondo-pesos'||tipo==='santander')){
+  }else{
+    var okComision=await cqComisionCajaEliminar(mov,tipo);
+    if(!okComision)return;
+  }
+  if(mov.tipo!=='ingreso'&&(tipo==='fondo-pesos'||tipo==='santander')){
     var okG=await cqEliminarVinculosGastos(mov);
     if(!okG)return;
     var okM=await cqEliminarVinculosMateriales(mov);
