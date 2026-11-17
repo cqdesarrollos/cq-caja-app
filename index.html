@@ -2041,7 +2041,8 @@ body{overflow-x:hidden!important}
     <div class="mbody">
       <div id="gf-usd-purpose-wrap" style="display:none"><div class="fld"><label>¿Qué tipo de salida es?</label><div class="usd-purpose"><button type="button" id="gf-purpose-cambio" onclick="cqSetUsdPurpose('gf','cambio')">💱 Cambio de moneda</button><button type="button" id="gf-purpose-pago" onclick="cqSetUsdPurpose('gf','pago')">💳 Pago</button></div></div></div>
       <div class="fld"><label id="gf-monto-label">Monto</label><input type="number" id="gf-monto" min="0" step="0.01" placeholder="0" oninput="cqUsdMontoChanged('gf');cqImpRenderReparto('gf')"></div>
-      <div class="fld" id="gf-desc-wrap"><label>Concepto / descripción</label><input type="text" id="gf-desc" placeholder="Ej. Electricidad, mantenimiento, materiales..."></div>
+      <!-- Para gastos de Fondo común $ y Santander $, la descripción se toma de Comentario/Subrubro. -->
+      <input type="hidden" id="gf-desc">
       <div class="fld" id="gf-pago-concepto-wrap" style="display:none">
         <label>Concepto</label>
         <input type="text" id="gf-pago-concepto" placeholder="Ej. Pago proveedor, compra, servicio...">
@@ -5988,8 +5989,6 @@ var gfTipo=null, gfEditId=null;
 function openGastoFondo(tipo){
   gfTipo=tipo; gfEditId=null;
   var cfg=fondoConfig(tipo);
-  var gfDescWrap=document.getElementById('gf-desc-wrap');
-  if(gfDescWrap)gfDescWrap.style.display=(tipo==='fondo-usd'||tipo==='santander-usd')?'none':'';
   document.getElementById('gf-ttl').textContent='Nuevo gasto · '+cfg.titulo;
   document.getElementById('gf-monto-label').textContent='Monto '+cfg.label;
   document.getElementById('gf-monto').value='';
@@ -6017,8 +6016,6 @@ function openEditFondoMov(tipo,id){
   }
   gfTipo=tipo; gfEditId=id;
   document.getElementById('gf-ttl').textContent='Editar gasto';
-  var gfDescWrap=document.getElementById('gf-desc-wrap');
-  if(gfDescWrap)gfDescWrap.style.display=(tipo==='fondo-usd'||tipo==='santander-usd')?'none':'';
   document.getElementById('gf-monto-label').textContent='Monto '+cfg.label;
   document.getElementById('gf-monto').value=m.monto;
   if(document.getElementById('gf-desc')) document.getElementById('gf-desc').value=m.desc||'';
@@ -6060,6 +6057,19 @@ async function guardarGastoFondo(){
   var fx=esCambio?cqFxRead('gf'):null;if(fx&&fx.error){alert(fx.error);return;}
   var comisionCaja=cqComisionCajaRead('gf');if(comisionCaja.error){alert(comisionCaja.error);return;}
   var imp=esUsd?{}:cqImpRead('gf'); if(imp.error){alert(imp.error);return;}
+  // No se pide Concepto/Descripción por duplicado en las salidas en pesos.
+  // El comentario existente es la descripción principal; si está vacío, usamos
+  // el subrubro elegido para mantener un movimiento identificable en Caja.
+  if(gfTipo==='fondo-pesos'||gfTipo==='santander'){
+    var notaGasto=String(imp.imputacionComentario||'').trim();
+    var nombreSubrubro=String(imp.imputacionSubrubroLabel||'').trim();
+    var descripcionAnterior='';
+    if(gfEditId){
+      var previo=(DB[fondoConfig(gfTipo).movs]||[]).find(function(x){return String(x.id)===String(gfEditId);});
+      descripcionAnterior=previo?String(previo.desc||'').trim():'';
+    }
+    desc=notaGasto||nombreSubrubro||descripcionAnterior||'Gasto';
+  }
   var ingresoCajaChicaSolicitado=(!esUsd && gfTipo==='fondo-pesos')?cqCajaChicaDebeIngresar():false;
   var cfg=fondoConfig(gfTipo);
   var tc=esCambio?fx.tc:getLastTC();
