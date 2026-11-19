@@ -3791,28 +3791,36 @@ const CQ_IMPUTACION_RUBROS=[
   {id:'mo',label:'Mano de obra'},
   {id:'ext',label:'Mano de obra extras'}
 ];
-// Los IDs de rubro son estables; los títulos visibles se leen de la Configuración de Gastos.
-// Actualiza los selectores abiertos sin cambiar la categoría seleccionada.
-function cqAplicarNombresRubrosDesdeGastos(categoryLabels){
-  if(!categoryLabels||typeof categoryLabels!=='object')return;
+// Los IDs de rubro son estables; los títulos visibles se leen de Gastos.
+// Las categorías nuevas se suman al listado existente, sin cambiar los movimientos.
+function cqAplicarNombresRubrosDesdeGastos(categoryLabels,categoriasExtra){
+  if(!categoryLabels||typeof categoryLabels!=='object')categoryLabels={};
+  const baseIds=['lote','arq','mat','mo','ext'];
+  const activas=(Array.isArray(categoriasExtra)?categoriasExtra:[]).filter(x=>x&&x.id&&x.activa!==false);
+  CQ_IMPUTACION_RUBROS.splice(0,CQ_IMPUTACION_RUBROS.length,...CQ_IMPUTACION_RUBROS.filter(x=>baseIds.includes(x.id)));
+  activas.forEach(x=>CQ_IMPUTACION_RUBROS.push({id:x.id,label:String(categoryLabels[x.id]||x.label||x.id)}));
   CQ_IMPUTACION_RUBROS.forEach(function(r){
     var label=categoryLabels[r.id];
     if(typeof label==='string'&&label.trim())r.label=label.trim();
   });
   ['gd-rubro','gf-rubro','ing-gastos-rubro'].forEach(function(id){
     var select=document.getElementById(id);
-    if(!select)return;
-    Array.prototype.forEach.call(select.options,function(opt){
-      var rubro=CQ_IMPUTACION_RUBROS.find(function(r){return r.id===opt.value;});
-      if(rubro)opt.textContent=rubro.label;
-    });
+    if(!select || (select.disabled&&select.value==='ofi'))return;
+    var anterior=select.value,anteriorLabel=select.selectedOptions?.[0]?.textContent||anterior;
+    var primer=document.createElement('option');primer.value='';primer.textContent=id==='ing-gastos-rubro'?'Seleccionar categoría...':'Seleccionar rubro...';
+    select.replaceChildren(primer);
+    CQ_IMPUTACION_RUBROS.forEach(function(r){var op=document.createElement('option');op.value=r.id;op.textContent=r.label;select.appendChild(op);});
+    if(anterior&&!CQ_IMPUTACION_RUBROS.some(function(r){return r.id===anterior;})){
+      var historica=document.createElement('option');historica.value=anterior;historica.textContent=anteriorLabel;select.appendChild(historica);
+    }
+    select.value=anterior;
   });
 }
 var CQ_GASTOS_CONFIG_FIREBASE=null;
 var CQ_GASTOS_CONFIG_LOADING=null;
 try{
-  var cqCfgCacheCategorias=JSON.parse(localStorage.getItem('gastos_config')||'null');
-  if(cqCfgCacheCategorias)cqAplicarNombresRubrosDesdeGastos(cqCfgCacheCategorias.categoryLabels);
+  var cqCfgCacheCategorias=JSON.parse(localStorage.getItem('cq_caja_catalogo_gastos_ui')||'null');
+  if(cqCfgCacheCategorias)cqAplicarNombresRubrosDesdeGastos(cqCfgCacheCategorias.categoryLabels,cqCfgCacheCategorias.categoriasExtra);
 }catch(e){}
 
 async function cqLoadGastosConfigFirebase(force){
@@ -3826,9 +3834,9 @@ async function cqLoadGastosConfigFirebase(force){
       if(!snap.exists())throw new Error('No existe config/app de Gastos');
       var d=snap.data()||{};
       if(!Array.isArray(d.obras)||!d.subrubros)throw new Error('Configuración de Gastos incompleta');
-      CQ_GASTOS_CONFIG_FIREBASE={obras:d.obras,subrubros:d.subrubros,categoryLabels:d.categoryLabels||{},defaultTC:d.defaultTC||0};
-      cqAplicarNombresRubrosDesdeGastos(CQ_GASTOS_CONFIG_FIREBASE.categoryLabels);
-      try{localStorage.setItem('gastos_config',JSON.stringify(CQ_GASTOS_CONFIG_FIREBASE));}catch(e){}
+      CQ_GASTOS_CONFIG_FIREBASE={obras:d.obras,subrubros:d.subrubros,categoryLabels:d.categoryLabels||{},categoriasExtra:Array.isArray(d.categoriasExtra)?d.categoriasExtra:[],defaultTC:d.defaultTC||0};
+      cqAplicarNombresRubrosDesdeGastos(CQ_GASTOS_CONFIG_FIREBASE.categoryLabels,CQ_GASTOS_CONFIG_FIREBASE.categoriasExtra);
+      try{localStorage.setItem('cq_caja_catalogo_gastos_ui',JSON.stringify(CQ_GASTOS_CONFIG_FIREBASE));}catch(e){}
       return CQ_GASTOS_CONFIG_FIREBASE;
     }finally{
       CQ_GASTOS_CONFIG_LOADING=null;
@@ -3855,7 +3863,7 @@ setTimeout(function(){
 
 function cqImpSubrubros(rubroId){
   var cfg=CQ_GASTOS_CONFIG_FIREBASE;
-  if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
+  if(!cfg){try{cfg=JSON.parse(localStorage.getItem('cq_caja_catalogo_gastos_ui')||'null');}catch(e){}}
   var arr=(cfg&&cfg.subrubros&&Array.isArray(cfg.subrubros[rubroId]))?cfg.subrubros[rubroId]:[];
   return arr.map(function(x){return typeof x==='string'?{id:x,label:x}:{id:String(x.id||x.nombre||x.label||''),label:String(x.nombre||x.label||x.id||'')};}).filter(function(x){return x.id&&x.label;});
 }
@@ -3924,7 +3932,7 @@ document.addEventListener('click',function(e){
 });
 function cqGastosConfigActualCG(){
   var cfg=CQ_GASTOS_CONFIG_FIREBASE;
-  if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
+  if(!cfg){try{cfg=JSON.parse(localStorage.getItem('cq_caja_catalogo_gastos_ui')||'null');}catch(e){}}
   return cfg||null;
 }
 function cqObraHabilitadaModuloCG(obra,modulo){
@@ -4693,7 +4701,7 @@ function cqAplicarModoOficina(prefix,subrubroSeleccionado){
     cqMaterialProducto[prefix]=null;
 
     var cfg=CQ_GASTOS_CONFIG_FIREBASE;
-    if(!cfg){try{cfg=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}}
+    if(!cfg){try{cfg=JSON.parse(localStorage.getItem('cq_caja_catalogo_gastos_ui')||'null');}catch(e){}}
     var arr=(cfg&&cfg.subrubros&&Array.isArray(cfg.subrubros.ofi))?cfg.subrubros.ofi:[];
     window._cqSubArr=window._cqSubArr||{};
     window._cqSubArr[prefix]=arr.map(function(x){
@@ -4756,8 +4764,11 @@ function cqImpInit(prefix,data){
   cqMaterialesDraft[prefix]=Array.isArray(data&&data.materialesCantidades)?data.materialesCantidades.map(function(x){return {obraId:x.obraId,obra:x.obra,qty:Number(x.qty)||0};}):[];
   cqMaterialProducto[prefix]=data&&data.materialesProducto?Object.assign({},data.materialesProducto):null;
   var rubro=document.getElementById(prefix+'-rubro');
-  rubro.innerHTML='<option value="">Seleccionar rubro...</option>'+CQ_IMPUTACION_RUBROS.map(function(r){return '<option value="'+r.id+'">'+r.label+'</option>';}).join('');
-  rubro.value=(data&&data.imputacionRubro&&data.imputacionRubro!=='ofi')?data.imputacionRubro:'';
+  var opcionesRubro=CQ_IMPUTACION_RUBROS.slice();
+  var rubroGuardado=(data&&data.imputacionRubro&&data.imputacionRubro!=='ofi')?String(data.imputacionRubro):'';
+  if(rubroGuardado&&!opcionesRubro.some(function(x){return x.id===rubroGuardado;}))opcionesRubro.push({id:rubroGuardado,label:String(data.imputacionRubroLabel||rubroGuardado)+' (histórica)'});
+  rubro.innerHTML='<option value="">Seleccionar rubro...</option>'+opcionesRubro.map(function(r){return '<option value="'+escapeHTML(r.id)+'">'+escapeHTML(r.label)+'</option>';}).join('');
+  rubro.value=rubroGuardado;
   rubro.onchange=function(){
     cqImpCargarSubrubros(prefix,'');
     cqMaterialesDraft[prefix]=[];
@@ -6487,8 +6498,10 @@ function cqIngresoObraGastosChanged(selectedRubro,selectedSub){
     rub.disabled=true;
   }else{
     rub.disabled=false;
-    rub.innerHTML='<option value="">Seleccionar categoría...</option>'+CQ_IMPUTACION_RUBROS.map(function(r){return '<option value="'+r.id+'">'+escapeHTML(r.label)+'</option>';}).join('');
-    if(selectedRubro&&CQ_IMPUTACION_RUBROS.some(function(r){return r.id===selectedRubro;}))rub.value=selectedRubro;
+    var opcionesRubro=CQ_IMPUTACION_RUBROS.slice();
+    if(selectedRubro&&!opcionesRubro.some(function(r){return r.id===selectedRubro;}))opcionesRubro.push({id:selectedRubro,label:selectedRubro+' (histórica)'});
+    rub.innerHTML='<option value="">Seleccionar categoría...</option>'+opcionesRubro.map(function(r){return '<option value="'+escapeHTML(r.id)+'">'+escapeHTML(r.label)+'</option>';}).join('');
+    if(selectedRubro&&opcionesRubro.some(function(r){return r.id===selectedRubro;}))rub.value=selectedRubro;
   }
   cqIngresoRubroChanged(selectedSub);
 }
@@ -6576,7 +6589,7 @@ function cqIngresoReadIntegraciones(tipo,monto,fecha){
   if(tipoImpacto&&tg)tg.checked=true;
   if(tg&&tg.checked){
     if(!CQ_GASTOS_CONFIG_FIREBASE){
-      try{CQ_GASTOS_CONFIG_FIREBASE=JSON.parse(localStorage.getItem('gastos_config')||'null');}catch(e){}
+      try{CQ_GASTOS_CONFIG_FIREBASE=JSON.parse(localStorage.getItem('cq_caja_catalogo_gastos_ui')||'null');}catch(e){}
     }
     var obra=(document.getElementById('ing-gastos-obra')||{}).value||'';
     var rub=(document.getElementById('ing-gastos-rubro')||{}).value||'';
