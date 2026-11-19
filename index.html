@@ -5467,12 +5467,30 @@ async function guardarGastoDeuda(){
     }catch(e){console.warn('Caja → Comisión financiera',e);toast('Gasto guardado, pero no se pudo sincronizar la comisión con Gastos');}
   }
 }
+// Indicador visual de borrado. No modifica el orden ni los vínculos de eliminación.
+var cqCajaBorradoEnCurso=false;
+function cqCajaMostrarEliminando(){
+  if(cqCajaBorradoEnCurso)return false;
+  cqCajaBorradoEnCurso=true;
+  var el=document.getElementById('cq-caja-eliminando');
+  if(el){el.classList.add('visible');el.setAttribute('aria-hidden','false');}
+  return true;
+}
+function cqCajaOcultarEliminando(){
+  cqCajaBorradoEnCurso=false;
+  var el=document.getElementById('cq-caja-eliminando');
+  if(el){el.classList.remove('visible');el.setAttribute('aria-hidden','true');}
+}
+
 async function borrarDeuda(moneda,id){
+  if(cqCajaBorradoEnCurso)return;
   var lista=deudaList(moneda);
   var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+fmtMon(moneda,mov.monto)) : 'este movimiento';
   if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\\n\\nVas a eliminar: '+detalle+'\\n\\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
+  if(!cqCajaMostrarEliminando())return;
+  try{
   // Borrar primero los vínculos, para no dejar comisiones huérfanas.
   if(!await cqComisionCajaEliminar(mov,moneda))return;
   if(moneda==='pesos'){
@@ -5485,6 +5503,7 @@ async function borrarDeuda(moneda,id){
   if(mov&&(mov.aporteFondoUsd||mov.usdPurpose==='aporte'))cqBorrarIngresoAporteFondoUsd(mov.id);
   persist('Se eliminó un movimiento en '+labelDeuda(moneda));
   toast('Eliminado');renderDeuda(moneda);
+  }finally{cqCajaOcultarEliminando();}
 }
 
 var ppMoneda=null;
@@ -6923,12 +6942,15 @@ async function guardarIngreso(){
   if(!huboError&&(movSync.ingresoGastosAgregar||movSync.ingresoFinAgregar))toast('✓ Ingreso sincronizado');
 }
 async function borrarFondoMov(tipo,id){
+  if(cqCajaBorradoEnCurso)return;
   var cfg=fondoConfig(tipo);
   var lista=DB[cfg.movs]||[];
   var mov=lista.find(function(x){return x.id===id;});
   var detalle=mov ? ((mov.desc||'Movimiento')+' · '+cfg.fmt(mov.monto)) : 'este movimiento';
   if(!confirm('¿Eliminar '+(mov&&mov.tipo==='ingreso'?'ingreso':'gasto')+'?\n\nVas a eliminar: '+detalle+'\n\nEsta acción no se puede deshacer.')) return;
   if(!mov)return;
+  if(!cqCajaMostrarEliminando())return;
+  try{
 
   // Primero limpiar vínculos externos. Si falla alguno, conservar Caja intacta.
   if(mov.tipo==='ingreso'){
@@ -6963,6 +6985,7 @@ async function borrarFondoMov(tipo,id){
   if(!okCaja){toast('El movimiento quedó pendiente de sincronizar en Caja');renderFondo(tipo);return;}
   toast('Eliminado');
   renderFondo(tipo);
+  }finally{cqCajaOcultarEliminando();}
 }
 
 // ═══════════════════════════════════════════
@@ -8738,6 +8761,41 @@ function cqReporteEditar(boton){
   }
 }
 </style>
+
+
+<!-- Sólo indicador visual para los borrados de Caja Gerencia. -->
+<style id="cq-caja-eliminando-style">
+  #cq-caja-eliminando{
+    position:fixed;inset:0;z-index:2147483000;
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;background:rgba(4,19,45,.42);
+    visibility:hidden;opacity:0;pointer-events:none;
+    transition:opacity .15s ease,visibility .15s ease;
+  }
+  #cq-caja-eliminando.visible{visibility:visible;opacity:1;pointer-events:all;}
+  #cq-caja-eliminando .cq-caja-eliminando-card{
+    display:flex;align-items:center;gap:13px;
+    width:min(330px,calc(100vw - 40px));
+    background:#fff;border:1px solid #DCE8E3;border-radius:14px;
+    box-shadow:0 18px 55px rgba(6,30,85,.24);
+    padding:17px 19px;font-family:'Space Grotesk',sans-serif;
+  }
+  #cq-caja-eliminando .cq-caja-eliminando-spinner{
+    flex:0 0 28px;width:28px;height:28px;border:3px solid #DCEDE6;
+    border-top-color:#00B875;border-radius:50%;
+    animation:cqCajaGiroBorrado .8s linear infinite;
+  }
+  #cq-caja-eliminando .cq-caja-eliminando-titulo{font-size:14px;font-weight:900;color:#061E55;}
+  #cq-caja-eliminando .cq-caja-eliminando-sub{font-size:11px;color:#6F8176;margin-top:3px;line-height:1.3;}
+  @keyframes cqCajaGiroBorrado{to{transform:rotate(360deg);}}
+  @media(prefers-reduced-motion:reduce){#cq-caja-eliminando .cq-caja-eliminando-spinner{animation-duration:2s;}}
+</style>
+<div id="cq-caja-eliminando" role="status" aria-live="polite" aria-hidden="true">
+  <div class="cq-caja-eliminando-card">
+    <span class="cq-caja-eliminando-spinner" aria-hidden="true"></span>
+    <div><div class="cq-caja-eliminando-titulo">Eliminando…</div><div class="cq-caja-eliminando-sub">Actualizando los datos vinculados</div></div>
+  </div>
+</div>
 
 </body>
 </html>
