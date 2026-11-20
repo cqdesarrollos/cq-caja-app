@@ -1,3 +1,4 @@
+<!-- CQ Caja Gerencia · indicadores por destino: Caja Chica sin puntos falsos de Gastos / Materiales · 2026-11-20 -->
 <!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
 <!DOCTYPE html>
 <html lang="es">
@@ -5117,23 +5118,45 @@ function cqCajaChicaVinculoCorresponde(mov){
     && mov.imputacionPendienteGastos===false);
 }
 function cqDualSyncHTML(mov,origen){
-  var g=cqSyncDotHTML(mov);
-  var mat=cqMaterialesDotHTML(mov);
-  var cc='';
-  if(origen==='fondo-pesos' && cqCajaChicaVinculoCorresponde(mov)){
+  if(!mov)return '';
+  // CQ: indicadores de destino, no indicadores de módulos a los que NO se envió.
+  // Cuando el gasto de Fondo común $ fue enviado a Caja Chica, el único punto
+  // que corresponde a ese movimiento es CAJA CHICA. Gastos y Materiales no
+  // son errores: fueron destinos intencionalmente desactivados.
+  var esFondoPesos=origen==='fondo-pesos';
+  var soloCajaChica=esFondoPesos && mov.cajaChicaIngreso===true
+    && mov.imputacionPendienteGastos===false;
+  if(soloCajaChica){
     var ccSt=mov.cajaChicaSyncEstado||'pendiente';
     var ccCls=ccSt==='ok'?'ok':(ccSt==='pendiente'?'wait':'');
     var ccTitle=ccSt==='ok'
-      ?'Ingreso sincronizado con Caja Chica'
+      ?'Ingreso enviado y vinculado con Caja Chica'
       :(ccSt==='pendiente'
-        ?'Verificando ingreso en Caja Chica…'
+        ?'Envío a Caja Chica pendiente de verificar'
         :(mov.cajaChicaSyncError||'No se pudo verificar el ingreso en Caja Chica'));
-    cc='<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Caja chica</span><span class="cq-gastos-sync-dot '+ccCls+'" title="'+escapeHTML(ccTitle)+'"></span></span>';
+    return '<span class="cq-sync-pair"><span class="cq-sync-labeled">'
+      +'<span class="cq-sync-mini-label">Caja chica</span>'
+      +'<span class="cq-gastos-sync-dot '+ccCls+'" title="'+escapeHTML(ccTitle)+'"></span>'
+      +'</span></span>';
   }
+  // Compatibilidad VISUAL con transferencias históricas cuyo concepto dice
+  // CAJA CHICA, pero no tienen la marca de integración. No inventar un punto
+  // verde ni crear enlaces por el texto de la descripción: pedir verificación.
+  var descripcion=String(mov.imputacionComentario||mov.desc||'').trim();
+  var conceptoCajaChica=/^caja\s+chica\s*[.!-]*$/i.test(descripcion);
+  if(esFondoPesos && mov.imputacionPendienteGastos===false && conceptoCajaChica){
+    return '<span class="cq-sync-pair"><span class="cq-sync-labeled">'
+      +'<span class="cq-sync-mini-label">Caja chica · verificar</span>'
+      +'<span class="cq-gastos-sync-dot wait" title="El concepto dice Caja Chica, pero este movimiento no conserva una marca de envío confirmada. Editá y comprobá la casilla Caja Chica; no se cambió ningún dato."></span>'
+      +'</span></span>';
+  }
+  // Otros movimientos conservan sus indicadores originales, sin mostrar Caja
+  // Chica por el solo hecho de registrar un gasto común.
+  var g=cqSyncDotHTML(mov);
+  var mat=cqMaterialesDotHTML(mov);
   return '<span class="cq-sync-pair">'
     +(g?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Gastos</span>'+g+'</span>':'')
     +(mat?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Materiales</span>'+mat+'</span>':'')
-    +cc
     +'</span>';
 }
 
@@ -6131,7 +6154,7 @@ function openEditFondoMov(tipo,id){
     }
   }
   var ccCheckEdit=document.getElementById('gf-ingreso-caja-chica');
-  if(ccCheckEdit)ccCheckEdit.checked=cqCajaChicaVinculoCorresponde(m);
+  if(ccCheckEdit)ccCheckEdit.checked=(gfTipo==='fondo-pesos' && m.cajaChicaIngreso===true);
   cqImpToggleAgregar('gf');
   cqComisionCajaInit('gf',m);
   openModal('modal-gasto-fondo');
