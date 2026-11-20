@@ -8084,8 +8084,10 @@ function cqReporteEditar(boton){
     return '<span class="cq-gastos-sync-dot '+(ok?'ok':'')+'" title="'+escapeHTML(title)+'"></span>';
   }
   var _dualBase=window.cqDualSyncHTML;
-  if(typeof _dualBase==='function')window.cqDualSyncHTML=function(mov){
-    if(!(mov&&mov.panolAgregar))return _dualBase(mov)||'';
+  if(typeof _dualBase==='function')window.cqDualSyncHTML=function(mov,origen){
+    // Mantener el origen al delegar: Fondo comun $ necesita ese dato para
+    // mostrar el estado REAL de Caja Chica, en vez de los puntos de Gastos.
+    if(!(mov&&mov.panolAgregar))return _dualBase(mov,origen)||'';
     var p=dotPanol(mov),html='<span class="cq-sync-pair">';
     // Con precio: Gastos y Materiales están omitidos a propósito, mostrar sólo Pañol.
     // Sin precio: Gastos se registra ahora, Materiales sigue omitido; mostrar Gastos + Pañol.
