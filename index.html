@@ -5108,13 +5108,13 @@ function cqMaterialesDotHTML(mov){
         :(mov.materialesSyncError||'Error o faltante en Materiales')));
   return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span>';
 }
-// Caja Chica es un destino EXCLUSIVO de Fondo común $ sin envío a Gastos.
-// No mostrar puntos históricos de Caja Chica en gastos ya imputados a obras.
+// El indicador de Caja Chica aparece únicamente para envíos habilitados
+// desde Fondo común $, nunca como punto rojo decorativo en gastos normales.
+// No usar imputaciones históricas: pueden quedar campos anteriores aun cuando
+// "Agregar a Gastos" se desmarcó y se eligió enviar a Caja Chica.
 function cqCajaChicaVinculoCorresponde(mov){
-  if(!mov||mov.cajaChicaIngreso!==true)return false;
-  if(mov.imputacionPendienteGastos===true)return false;
-  if(Array.isArray(mov.imputaciones)&&mov.imputaciones.length>0)return false;
-  return true;
+  return !!(mov && mov.cajaChicaIngreso===true
+    && mov.imputacionPendienteGastos===false);
 }
 function cqDualSyncHTML(mov,origen){
   var g=cqSyncDotHTML(mov);
