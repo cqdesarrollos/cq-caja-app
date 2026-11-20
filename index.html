@@ -1,3 +1,4 @@
+<!-- CQ 20/11/2026 · Restauración explícita por ID en Caja → Materiales. -->
 <!-- CQ Caja Gerencia · indicadores por destino: Caja Chica sin puntos falsos de Gastos / Materiales · 2026-11-20 -->
 <!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
 <!DOCTYPE html>
@@ -4208,9 +4209,14 @@ function cqCgMatBloqueoCarga(c,data,bo){
   var matId=String(c.materialIdOrigen!=null?c.materialIdOrigen:c.matId||'');
   var mat=cod?'cod:'+cod:nom?'nom:'+nom:matId?'id:'+matId:'';
   var fp='fp:caja_gerencia|obra:'+obra+'|mat:'+mat+'|fecha:'+String(c.fecha||'').trim()+'|qty:'+String(Number(c.qty)||0);
-  if(en(data.ignoredIntegrationIds,iid)||en(bo.ids,iid)||en(bo.ignoredIntegrationIds,iid))return 'La carga fue eliminada anteriormente en Materiales (bloqueo por ID).';
-  if(en(data.ignoredIntegrationKeys,key)||en(bo.keys,key)||en(bo.ignoredIntegrationKeys,key))return 'Materiales conserva un bloqueo de una carga eliminada anteriormente.';
-  if(mat&&(en(data.ignoredIntegrationFingerprints,fp)||en(bo.fps,fp)||en(bo.ignoredIntegrationFingerprints,fp)))return 'Materiales conserva una baja histórica de este material y esta obra.';
+  // Sólo una autorización explícita para este vínculo revierte un bloqueo previo.
+  // No levantar bloqueos globales de otros movimientos con la misma huella.
+  var restaurado=en(data.restoredIntegrationIds,iid);
+  if(!restaurado){
+    if(en(data.ignoredIntegrationIds,iid)||en(bo.ids,iid)||en(bo.ignoredIntegrationIds,iid))return 'La carga fue eliminada anteriormente en Materiales (bloqueo por ID).';
+    if(en(data.ignoredIntegrationKeys,key)||en(bo.keys,key)||en(bo.ignoredIntegrationKeys,key))return 'Materiales conserva un bloqueo de una carga eliminada anteriormente.';
+    if(mat&&(en(data.ignoredIntegrationFingerprints,fp)||en(bo.fps,fp)||en(bo.ignoredIntegrationFingerprints,fp)))return 'Materiales conserva una baja histórica de este material y esta obra.';
+  }
   if(en(data.deletedMatIds,c.matId))return 'El producto asociado fue eliminado del catálogo de Materiales.';
   if(en(data.deletedMaterialKeys,'name:'+cqCgMatNormalizarIdentidad(c.matName||c.materialNameOrigen)))
     return 'El material fue eliminado del catálogo y su nombre está bloqueado.';
@@ -4259,6 +4265,63 @@ function cqCgMatComprobarCargaMovimiento(mov,estado){
       return nombreObra+': el nombre del producto de Materiales es diferente.';
   }
   return '';
+}
+
+// CQ 20/11/2026 — restauración EXPLÍCITA, individual por movimiento.
+// Nunca revivir automáticamente movimientos borrados desde Materiales.
+var cqCgMatRestauracionEnCurso=false;
+async function cqCgMatRestaurarMovimiento(movId){
+  if(cqCgMatRestauracionEnCurso)return;
+  var mov=cqCajaMovimientoActualPorId(movId);
+  if(!mov||mov.imputacionRubro!=='mat'||!mov.materialesAgregar||!mov.materialesProducto)
+    throw new Error('El movimiento ya no está configurado para enviar a Materiales.');
+  var partes=(Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[])
+    .filter(function(x){return x&&x.obraId&&Number(x.qty)>0;});
+  if(!partes.length)throw new Error('El movimiento no tiene cantidades para enviar.');
+  var ids=partes.map(function(x){return cqMaterialesIntegrationId(mov.id,x.obraId);});
+  var f=window._cqFirebase;if(!f||!f.runTransaction)throw new Error('Firebase no está disponible.');
+  cqCgMatRestauracionEnCurso=true;
+  try{
+    // Los tombstones permanecen intactos. La excepción alcanza sólo a estos IDs.
+    var ref=f.doc(f.db,'materiales','data_planilla_exacta_v4');
+    await f.runTransaction(f.db,async function(tx){
+      var snap=await tx.get(ref);
+      if(!snap.exists())throw new Error('No existe la planilla de Materiales.');
+      var data=snap.data()||{};
+      var arr=Array.isArray(data.restoredIntegrationIds)?data.restoredIntegrationIds.map(String):[];
+      var changed=false;
+      ids.forEach(function(id){if(arr.indexOf(id)<0){arr.push(id);changed=true;}});
+      if(changed){
+        data.restoredIntegrationIds=arr;
+        data.updatedAt=new Date().toISOString();
+        tx.set(ref,data);
+      }
+    });
+    await cqSyncMovimientoMateriales(mov,null);
+    toast('Carga restaurada y comprobada en Materiales');
+  }finally{cqCgMatRestauracionEnCurso=false;}
+}
+function cqCgMatGestionarPunto(el){
+  if(!el)return;
+  var msg=String(el.getAttribute('data-cq-materiales-error')||'');
+  var movId=String(el.getAttribute('data-cq-mat-mov-id')||'');
+  var bloqueada=/baja hist[oó]rica|bloqueo por ID|bloqueo de una carga eliminada/i.test(msg);
+  if(!bloqueada||!movId){alert(msg||'No se pudo verificar Materiales.');return;}
+  var mov=cqCajaMovimientoActualPorId(movId);
+  if(!mov){alert('El movimiento no existe en Caja.');return;}
+  var parts=Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[];
+  var detalle=parts.map(function(x){return String(x.obra||x.obraId)+' ('+Number(x.qty||0)+' u)';}).join(' · ');
+  var nombre=(mov.materialesProducto||{}).name||'material';
+  var pregunta='Materiales registró una eliminación anterior.\n\n'
+    +'Movimiento de Caja: '+String(mov.fecha||'sin fecha')+'\n'
+    +'Producto: '+nombre+'\nObra(s): '+detalle+'\n\n'
+    +'¿RESTAURAR expresamente estas cargas desde Caja Gerencia?\n'
+    +'No se reactivarán otras cargas eliminadas y no se duplicará este vínculo.';
+  if(!confirm(pregunta))return;
+  cqCgMatRestaurarMovimiento(movId).catch(function(e){
+    console.error('Restaurar Caja → Materiales',e);
+    alert('No se pudo restaurar: '+String(e&&e.message||e));
+  });
 }
 
 /* ==========================================================
@@ -5154,17 +5217,17 @@ function cqMaterialesDotHTML(mov){
       :(st==='no'
         ?'No se agregó a Materiales'
         :(mov.materialesSyncError||'Error o faltante en Materiales')));
-  return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"'+(st==='error'?' data-cq-materiales-error="'+escapeHTML(title)+'" role="button" tabindex="0" style="cursor:pointer"':'')+'></span>';
+  return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"'+(st==='error'?' data-cq-materiales-error="'+escapeHTML(title)+'" data-cq-mat-mov-id="'+escapeHTML(String(mov.id))+'" role="button" tabindex="0" style="cursor:pointer"':'')+'></span>';
 }
 // En tablet, tocar el punto rojo muestra el motivo (title no siempre es visible).
 document.addEventListener('click',function(e){
   var t=e.target&&e.target.closest?e.target.closest('[data-cq-materiales-error]'):null;
-  if(t)alert(t.getAttribute('data-cq-materiales-error'));
+  if(t)cqCgMatGestionarPunto(t);
 });
 document.addEventListener('keydown',function(e){
   if(e.key!=='Enter'&&e.key!==' ')return;
   var t=e.target&&e.target.closest?e.target.closest('[data-cq-materiales-error]'):null;
-  if(t){e.preventDefault();alert(t.getAttribute('data-cq-materiales-error'));}
+  if(t){e.preventDefault();cqCgMatGestionarPunto(t);}
 });
 // El indicador de Caja Chica aparece únicamente para envíos habilitados
 // desde Fondo común $, nunca como punto rojo decorativo en gastos normales.
