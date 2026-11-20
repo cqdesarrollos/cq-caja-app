@@ -1,3 +1,6 @@
+<!-- CQ 20/11/2026 · Caja→Materiales: prioridad ID exacto frente a huella histórica ambigua -->
+<!-- CQ 20/11/2026 · Restauración explícita por ID en Caja → Materiales. -->
+<!-- CQ Caja Gerencia · indicadores por destino: Caja Chica sin puntos falsos de Gastos / Materiales · 2026-11-20 -->
 <!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
 <!DOCTYPE html>
 <html lang="es">
@@ -212,7 +215,7 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, getDocFromServer, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAf7vM8Og4jSe7QGHQUK-afvuXka9MCKU8",
@@ -226,7 +229,7 @@ body{background:#F5F3EF;font-family:'Space Grotesk',sans-serif;color:#1C2B22;min
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  window._cqFirebase = { db, doc, setDoc, getDoc, onSnapshot, runTransaction };
+  window._cqFirebase = { db, doc, setDoc, getDoc, getDocFromServer, onSnapshot, runTransaction };
   window._cqFirebaseReady = true;
   document.dispatchEvent(new Event("cq-firebase-ready"));
 </script>
@@ -3670,7 +3673,7 @@ function renderDeuda(moneda){
       +'</div>'
       +'<div class="gasto-val">'+fmtMon(moneda,g.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(isReal&&moneda==='pesos'?cqDualSyncHTML(g):'')
+      +(isReal&&moneda==='pesos'?cqDualSyncHTML(g,'deuda-pesos'):'')
       +(isLiq?'':(isPP?'<button class="icon-btn" title="Modificar pago parcial" onclick="openEditPagoParcial(\''+moneda+'\','+g.id+')">✎</button>':'<button class="icon-btn" onclick="openEditDeuda(\''+moneda+'\','+g.id+')">✎</button>'))
       +'<button class="icon-btn del" onclick="borrarDeuda(\''+moneda+'\','+g.id+')">✕</button>'
       +'</div>'
@@ -4189,6 +4192,145 @@ function cqMaterialesPayloadCaja(mov,entry,active){
 }
 
 
+// CQ 20/11/2026 — verificación de carga real (no sólo transacción exitosa).
+// Materiales puede ocultar una carga presente en Firebase si fue borrada
+// manualmente y quedó registrada en su documento de bloqueos/tombstones.
+function cqCgMatNormalizarIdentidad(v){
+  return String(v==null?'':v).trim().toLowerCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+}
+function cqCgMatBloqueoCarga(c,data,bo){
+  data=data||{};bo=bo||{};
+  var en=function(a,k){return Array.isArray(a)&&a.some(function(x){return String(x)===String(k);});};
+  var iid=String(c.integracionId||''),mov=String(c.sourceMovementId||'');
+  // Clave lógica exacta: Materiales normaliza el nombre COMPLETO de la obra.
+  var obra=cqCgMatNormalizarIdentidad(c.obraNameOrigen||c.obraName);
+  var key='src:caja_gerencia|mov:'+mov+'|obra:'+obra;
+  var identidadEstable=!!(iid&&mov&&obra);
+  var nom=cqCgMatNormalizarIdentidad(c.materialNameOrigen||c.matName);
+  var cod=String(c.codigoOrigen||'').trim().toLowerCase();
+  var matId=String(c.materialIdOrigen!=null?c.materialIdOrigen:c.matId||'');
+  var mat=cod?'cod:'+cod:nom?'nom:'+nom:matId?'id:'+matId:'';
+  var fp='fp:caja_gerencia|obra:'+obra+'|mat:'+mat+'|fecha:'+String(c.fecha||'').trim()+'|qty:'+String(Number(c.qty)||0);
+  // Sólo una autorización explícita para este vínculo revierte un bloqueo previo.
+  // No levantar bloqueos globales de otros movimientos con la misma huella.
+  var restaurado=en(data.restoredIntegrationIds,iid);
+  if(!restaurado){
+    if(en(data.ignoredIntegrationIds,iid)||en(bo.ids,iid)||en(bo.ignoredIntegrationIds,iid))return 'La carga fue eliminada anteriormente en Materiales (bloqueo por ID).';
+    if(en(data.ignoredIntegrationKeys,key)||en(bo.keys,key)||en(bo.ignoredIntegrationKeys,key))return 'Materiales conserva un bloqueo de una carga eliminada anteriormente.';
+    // La huella (material/fecha/cantidad) NO identifica una compra única.
+    // Si Caja trae ID y movimiento+obra verificables, solo respetar bajas exactas
+    // por ID o clave lógica, chequeadas arriba. Huellas = respaldo legacy.
+    if(!identidadEstable&&mat&&(en(data.ignoredIntegrationFingerprints,fp)||en(bo.fps,fp)||en(bo.ignoredIntegrationFingerprints,fp)))
+      return 'Materiales conserva una baja histórica sin identidad exacta de este material y esta obra.';
+  }
+  if(en(data.deletedMatIds,c.matId))return 'El producto asociado fue eliminado del catálogo de Materiales.';
+  if(en(data.deletedMaterialKeys,'name:'+cqCgMatNormalizarIdentidad(c.matName||c.materialNameOrigen)))
+    return 'El material fue eliminado del catálogo y su nombre está bloqueado.';
+  return '';
+}
+async function cqCgMatLeerEstadoReal(){
+  var f=window._cqFirebase;
+  if(!f||typeof f.getDocFromServer!=='function')throw new Error('No se puede verificar Materiales directamente en Firebase.');
+  var rs=await Promise.all([
+    f.getDocFromServer(f.doc(f.db,'materiales','data_planilla_exacta_v4')),
+    f.getDocFromServer(f.doc(f.db,'materiales','tombstones_cargas_v2'))
+  ]);
+  if(!rs[0].exists())throw new Error('No existe el documento principal de Materiales.');
+  return {data:rs[0].data()||{},bloqueos:rs[1].exists()?(rs[1].data()||{}):{}};
+}
+function cqCgMatComprobarCargaMovimiento(mov,estado){
+  var partes=(mov&&mov.materialesAgregar&&mov.imputacionRubro==='mat'&&Array.isArray(mov.materialesCantidades))
+    ?mov.materialesCantidades.filter(function(x){return x&&x.obraId&&Number(x.qty)>0;}):[];
+  if(!partes.length)return 'No hay cantidades válidas para enviar a Materiales.';
+  var data=estado.data||{},cargas=Array.isArray(data.cargas)?data.cargas:[];
+  var prod=mov.materialesProducto||{};
+  for(var i=0;i<partes.length;i++){
+    var x=partes[i],iid=cqMaterialesIntegrationId(mov.id,x.obraId);
+    var matches=cargas.filter(function(c){return c&&String(c.integracionId||'')===iid;});
+    if(!matches.length){
+      var obra=cqCgMatClaveObra(x.obra||x.obraId||'');
+      matches=cargas.filter(function(c){
+        if(!c||String(c.sourceMovementId||'')!==String(mov.id))return false;
+        var origen=String(c.origen||c.source||'').toLowerCase().replace(/[\s-]+/g,'_');
+        if(origen!=='caja_gerencia'&&origen!=='cq_caja_gerencia')return false;
+        var clave=cqCgMatClaveObra(c.obraNameOrigen||c.obraName||'');
+        return obra?clave===obra:String(c.obraNameOrigen||c.obraName||'')===String(x.obra||'');
+      });
+    }
+    var nombreObra=String(x.obra||x.obraId||'obra');
+    if(!matches.length)return 'No aparece una carga de '+nombreObra+' en Materiales.';
+    if(matches.length>1)return 'Hay cargas duplicadas para '+nombreObra+' en Materiales.';
+    var c=matches[0],bloqueo=cqCgMatBloqueoCarga(c,data,estado.bloqueos);
+    if(bloqueo)return nombreObra+': '+bloqueo+' No volver a enviarla sin revisar la baja.';
+    if(Math.abs((Number(c.qty)||0)-(Number(x.qty)||0))>0.0001)
+      return nombreObra+': cantidad en Caja '+Number(x.qty)+'; en Materiales '+Number(c.qty||0)+'.';
+    if(prod.id!=null&&c.materialIdOrigen!=null&&c.materialIdOrigen!==''&&String(c.materialIdOrigen)!==String(prod.id))
+      return nombreObra+': el producto vinculado en Materiales es diferente.';
+    if(prod.name&&c.matName&&cqCgMatNormalizarIdentidad(prod.name)!==cqCgMatNormalizarIdentidad(c.matName)
+       &&cqCgMatNormalizarIdentidad(prod.name)!==cqCgMatNormalizarIdentidad(c.materialNameOrigen))
+      return nombreObra+': el nombre del producto de Materiales es diferente.';
+  }
+  return '';
+}
+
+// CQ 20/11/2026 — restauración EXPLÍCITA, individual por movimiento.
+// Nunca revivir automáticamente movimientos borrados desde Materiales.
+var cqCgMatRestauracionEnCurso=false;
+async function cqCgMatRestaurarMovimiento(movId){
+  if(cqCgMatRestauracionEnCurso)return;
+  var mov=cqCajaMovimientoActualPorId(movId);
+  if(!mov||mov.imputacionRubro!=='mat'||!mov.materialesAgregar||!mov.materialesProducto)
+    throw new Error('El movimiento ya no está configurado para enviar a Materiales.');
+  var partes=(Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[])
+    .filter(function(x){return x&&x.obraId&&Number(x.qty)>0;});
+  if(!partes.length)throw new Error('El movimiento no tiene cantidades para enviar.');
+  var ids=partes.map(function(x){return cqMaterialesIntegrationId(mov.id,x.obraId);});
+  var f=window._cqFirebase;if(!f||!f.runTransaction)throw new Error('Firebase no está disponible.');
+  cqCgMatRestauracionEnCurso=true;
+  try{
+    // Los tombstones permanecen intactos. La excepción alcanza sólo a estos IDs.
+    var ref=f.doc(f.db,'materiales','data_planilla_exacta_v4');
+    await f.runTransaction(f.db,async function(tx){
+      var snap=await tx.get(ref);
+      if(!snap.exists())throw new Error('No existe la planilla de Materiales.');
+      var data=snap.data()||{};
+      var arr=Array.isArray(data.restoredIntegrationIds)?data.restoredIntegrationIds.map(String):[];
+      var changed=false;
+      ids.forEach(function(id){if(arr.indexOf(id)<0){arr.push(id);changed=true;}});
+      if(changed){
+        data.restoredIntegrationIds=arr;
+        data.updatedAt=new Date().toISOString();
+        tx.set(ref,data);
+      }
+    });
+    await cqSyncMovimientoMateriales(mov,null);
+    toast('Carga restaurada y comprobada en Materiales');
+  }finally{cqCgMatRestauracionEnCurso=false;}
+}
+function cqCgMatGestionarPunto(el){
+  if(!el)return;
+  var msg=String(el.getAttribute('data-cq-materiales-error')||'');
+  var movId=String(el.getAttribute('data-cq-mat-mov-id')||'');
+  var bloqueada=/baja hist[oó]rica|bloqueo por ID|bloqueo de una carga eliminada/i.test(msg);
+  if(!bloqueada||!movId){alert(msg||'No se pudo verificar Materiales.');return;}
+  var mov=cqCajaMovimientoActualPorId(movId);
+  if(!mov){alert('El movimiento no existe en Caja.');return;}
+  var parts=Array.isArray(mov.materialesCantidades)?mov.materialesCantidades:[];
+  var detalle=parts.map(function(x){return String(x.obra||x.obraId)+' ('+Number(x.qty||0)+' u)';}).join(' · ');
+  var nombre=(mov.materialesProducto||{}).name||'material';
+  var pregunta='Materiales registró una eliminación anterior.\n\n'
+    +'Movimiento de Caja: '+String(mov.fecha||'sin fecha')+'\n'
+    +'Producto: '+nombre+'\nObra(s): '+detalle+'\n\n'
+    +'¿RESTAURAR expresamente estas cargas desde Caja Gerencia?\n'
+    +'No se reactivarán otras cargas eliminadas y no se duplicará este vínculo.';
+  if(!confirm(pregunta))return;
+  cqCgMatRestaurarMovimiento(movId).catch(function(e){
+    console.error('Restaurar Caja → Materiales',e);
+    alert('No se pudo restaurar: '+String(e&&e.message||e));
+  });
+}
+
 /* ==========================================================
    CQ CAJA GERENCIA — MATERIALIZACIÓN DIRECTA EN MATERIALES
    Materiales ya no consume materiales_integraciones como fuente activa.
@@ -4432,6 +4574,15 @@ async function cqSyncMovimientoMateriales(mov,oldMov){
   // Así no existe una ventana donde Materiales pueda conservar sólo la primera obra.
   await cqCgMaterializarDirectoLote(payloads);
 
+  // Comprobar en el servidor que la carga está registrada y es VISIBLE
+  // para Materiales; el commit no alcanza si Materiales guarda una baja previa.
+  var estadoReal=null;
+  if(nuevas.length){
+    estadoReal=await cqCgMatLeerEstadoReal();
+    var discrepancia=cqCgMatComprobarCargaMovimiento(mov,estadoReal);
+    if(discrepancia)throw new Error(discrepancia);
+  }
+
   // 2) Respaldo/auditoría FUERA del camino crítico. La fuente real ya quedó
   // confirmada por la transacción anterior; no hacer esperar el punto verde por
   // varias escrituras secundarias de red.
@@ -4456,7 +4607,11 @@ function cqLanzarSyncMaterialesCaja(mov,oldMov){
   var actual=cqCajaMovimientoActualPorId(mov.id);
   if(!actual){console.warn('Caja → Materiales cancelado: el movimiento ya no existe en Caja',mov.id);return;}
   mov=actual;
-  if(mov.materialesAgregar)mov.materialesSyncEstado='pendiente';
+  if(mov.materialesAgregar){
+    mov.materialesSyncEstado='pendiente';mov.materialesSyncError='';
+    cqCajaPatchMovimientoActual(mov.id,{materialesSyncEstado:'pendiente',materialesSyncError:''});
+    persist();renderCurrent();
+  }
   cqSyncMovimientoMateriales(mov,oldMov).catch(function(e){
     console.warn('Caja → Materiales',e);
     var err=String(e&&e.message||e),at=new Date().toISOString();
@@ -4580,52 +4735,15 @@ async function cqVerificarSincronizacionesMateriales(){
   if(cqVerificandoMateriales||!window._cqFirebase)return;
   cqVerificandoMateriales=true;
   try{
-    var f=window._cqFirebase;
-    var snap=await f.getDoc(f.doc(f.db,'materiales','data_planilla_exacta_v4'));
-    var cargas=snap.exists()&&Array.isArray((snap.data()||{}).cargas)?snap.data().cargas:[];
+    var estado=await cqCgMatLeerEstadoReal();
     var movs=cqTodosMovimientosPesosMateriales();
     var cambio=false;
-
     movs.forEach(function(m){
       var next='error',err='';
-      if(!m.materialesAgregar){
-        next='no';
-        err='No se agregó a Materiales';
-      }else{
-        var esperadas=Array.isArray(m.materialesCantidades)?m.materialesCantidades.filter(function(x){return x&&x.obraId&&Number(x.qty)>0;}):[];
-        if(!esperadas.length){
-          next='error';err='Sin cantidades vinculadas a Materiales';
-        }else{
-          var ok=true;
-          for(var i=0;i<esperadas.length;i++){
-            var x=esperadas[i];
-            var iid=cqMaterialesIntegrationId(m.id,x.obraId);
-            var c=cargas.find(function(z){return String(z.integracionId||'')===String(iid);});
-            if(!c){
-              // Materiales considera estable sourceMovementId + obra aunque una versión
-              // anterior haya usado otro integrationId. Usar el mismo criterio evita
-              // falsos puntos rojos cuando la carga real sí existe.
-              var movId=String(m.id);
-              var obraKey=cqCgMatClaveObra(x.obra||x.obraId||'');
-              c=cargas.find(function(z){
-                if(!z||String(z.sourceMovementId||'')!==movId)return false;
-                var origen=String(z.origen||z.source||'').toLowerCase().replace(/[\s-]+/g,'_');
-                if(origen!=='caja_gerencia'&&origen!=='cq_caja_gerencia')return false;
-                var zk=cqCgMatClaveObra(z.obraNameOrigen||z.obraName||'');
-                return obraKey ? zk===obraKey : String(z.obraNameOrigen||z.obraName||'')===String(x.obra||'');
-              });
-            }
-            if(!c){ok=false;err='La carga vinculada ya no existe en Materiales';break;}
-            if(Math.abs((Number(c.qty)||0)-(Number(x.qty)||0))>0.0001){
-              ok=false;err='La cantidad en Materiales no coincide';break;
-            }
-            if(m.materialesProducto&&m.materialesProducto.name&&
-               String(c.matName||'').trim().toLowerCase()!==String(m.materialesProducto.name||'').trim().toLowerCase()){
-              ok=false;err='El producto en Materiales no coincide';break;
-            }
-          }
-          next=ok?'ok':'error';
-        }
+      if(!m.materialesAgregar){next='no';err='No se agregó a Materiales';}
+      else {
+        err=cqCgMatComprobarCargaMovimiento(m,estado);
+        next=err?'error':'ok';
       }
       if(m.materialesSyncEstado!==next||m.materialesSyncError!==err){
         m.materialesSyncEstado=next;
@@ -4636,10 +4754,10 @@ async function cqVerificarSincronizacionesMateriales(){
     });
     if(cambio){persist();renderCurrent();}
   }catch(e){
-    console.warn('Verificación Caja ↔ Materiales',e);
-  }finally{
-    cqVerificandoMateriales=false;
-  }
+    // Un punto verde anterior no es prueba de verificación actual si no
+    // pudimos consultar el servidor. No confirmar nuevos movimientos por caché.
+    console.warn('Verificación Caja ↔ Materiales (servidor)',e);
+  }finally{cqVerificandoMateriales=false;}
 }
 // Sin sondeo continuo de Materiales: verificar al abrir/volver a la app y tras operaciones puntuales.
 window.addEventListener('focus',function(){setTimeout(cqVerificarSincronizacionesMateriales,450);});
@@ -5100,32 +5218,72 @@ function cqMaterialesDotHTML(mov){
   var st=mov.materialesAgregar?(mov.materialesSyncEstado||'error'):'no';
   var cls=st==='ok'?'ok':(st==='pendiente'?'wait':'');
   var title=st==='ok'
-    ?'Sincronizado con Materiales'
+    ?'Carga y cantidad confirmadas en Materiales'
     :(st==='pendiente'
       ?'Verificando Materiales…'
       :(st==='no'
         ?'No se agregó a Materiales'
         :(mov.materialesSyncError||'Error o faltante en Materiales')));
-  return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span>';
+  return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"'+(st==='error'?' data-cq-materiales-error="'+escapeHTML(title)+'" data-cq-mat-mov-id="'+escapeHTML(String(mov.id))+'" role="button" tabindex="0" style="cursor:pointer"':'')+'></span>';
 }
-function cqDualSyncHTML(mov){
-  var g=cqSyncDotHTML(mov);
-  var mat=cqMaterialesDotHTML(mov);
-  var cc='';
-  if(mov&&mov.cajaChicaIngreso){
+// En tablet, tocar el punto rojo muestra el motivo (title no siempre es visible).
+document.addEventListener('click',function(e){
+  var t=e.target&&e.target.closest?e.target.closest('[data-cq-materiales-error]'):null;
+  if(t)cqCgMatGestionarPunto(t);
+});
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  var t=e.target&&e.target.closest?e.target.closest('[data-cq-materiales-error]'):null;
+  if(t){e.preventDefault();cqCgMatGestionarPunto(t);}
+});
+// El indicador de Caja Chica aparece únicamente para envíos habilitados
+// desde Fondo común $, nunca como punto rojo decorativo en gastos normales.
+// No usar imputaciones históricas: pueden quedar campos anteriores aun cuando
+// "Agregar a Gastos" se desmarcó y se eligió enviar a Caja Chica.
+function cqCajaChicaVinculoCorresponde(mov){
+  return !!(mov && mov.cajaChicaIngreso===true
+    && mov.imputacionPendienteGastos===false);
+}
+function cqDualSyncHTML(mov,origen){
+  if(!mov)return '';
+  // CQ: indicadores de destino, no indicadores de módulos a los que NO se envió.
+  // Cuando el gasto de Fondo común $ fue enviado a Caja Chica, el único punto
+  // que corresponde a ese movimiento es CAJA CHICA. Gastos y Materiales no
+  // son errores: fueron destinos intencionalmente desactivados.
+  var esFondoPesos=origen==='fondo-pesos';
+  var soloCajaChica=esFondoPesos && mov.cajaChicaIngreso===true
+    && mov.imputacionPendienteGastos===false;
+  if(soloCajaChica){
     var ccSt=mov.cajaChicaSyncEstado||'pendiente';
     var ccCls=ccSt==='ok'?'ok':(ccSt==='pendiente'?'wait':'');
     var ccTitle=ccSt==='ok'
-      ?'Ingreso sincronizado con Caja Chica'
+      ?'Ingreso enviado y vinculado con Caja Chica'
       :(ccSt==='pendiente'
-        ?'Verificando ingreso en Caja Chica…'
+        ?'Envío a Caja Chica pendiente de verificar'
         :(mov.cajaChicaSyncError||'No se pudo verificar el ingreso en Caja Chica'));
-    cc='<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Caja chica</span><span class="cq-gastos-sync-dot '+ccCls+'" title="'+escapeHTML(ccTitle)+'"></span></span>';
+    return '<span class="cq-sync-pair"><span class="cq-sync-labeled">'
+      +'<span class="cq-sync-mini-label">Caja chica</span>'
+      +'<span class="cq-gastos-sync-dot '+ccCls+'" title="'+escapeHTML(ccTitle)+'"></span>'
+      +'</span></span>';
   }
+  // Compatibilidad VISUAL con transferencias históricas cuyo concepto dice
+  // CAJA CHICA, pero no tienen la marca de integración. No inventar un punto
+  // verde ni crear enlaces por el texto de la descripción: pedir verificación.
+  var descripcion=String(mov.imputacionComentario||mov.desc||'').trim();
+  var conceptoCajaChica=/^caja\s+chica\s*[.!-]*$/i.test(descripcion);
+  if(esFondoPesos && mov.imputacionPendienteGastos===false && conceptoCajaChica){
+    return '<span class="cq-sync-pair"><span class="cq-sync-labeled">'
+      +'<span class="cq-sync-mini-label">Caja chica · verificar</span>'
+      +'<span class="cq-gastos-sync-dot wait" title="El concepto dice Caja Chica, pero este movimiento no conserva una marca de envío confirmada. Editá y comprobá la casilla Caja Chica; no se cambió ningún dato."></span>'
+      +'</span></span>';
+  }
+  // Otros movimientos conservan sus indicadores originales, sin mostrar Caja
+  // Chica por el solo hecho de registrar un gasto común.
+  var g=cqSyncDotHTML(mov);
+  var mat=cqMaterialesDotHTML(mov);
   return '<span class="cq-sync-pair">'
     +(g?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Gastos</span>'+g+'</span>':'')
     +(mat?'<span class="cq-sync-labeled"><span class="cq-sync-mini-label">Materiales</span>'+mat+'</span>':'')
-    +cc
     +'</span>';
 }
 
@@ -5803,7 +5961,8 @@ async function cqVerificarIngresosCajaChica(){
   if(cqVerificandoCajaChica||!window._cqFirebase)return;
   cqVerificandoCajaChica=true;
   try{
-    var movs=(DB.fondoPesosMovs||[]).filter(function(m){return m&&m.cajaChicaIngreso;});
+    // No autorreparar ni recrear ingresos de Caja Chica para gastos imputados a Gastos.
+    var movs=(DB.fondoPesosMovs||[]).filter(cqCajaChicaVinculoCorresponde);
     if(!movs.length)return;
 
     var f=window._cqFirebase;
@@ -6063,7 +6222,7 @@ function renderFondo(tipo){
       +(isIng?cqIngresoDetalleIntegracion(m):((tipo==='fondo-pesos'||tipo==='santander')?cqCajaDetalleImputacion(m):''))+'</div>'
       +'<div class="gasto-val" style="color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'+':'-')+cfg.fmt(m.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(isIng?cqIngresoSyncHTML(m):((tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m):''))
+      +(isIng?cqIngresoSyncHTML(m):((tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m,tipo):''))
       +'<button class="icon-btn" onclick="cqOpenEditFondoMovSmart(\''+tipo+'\','+m.id+')" title="Ver / editar movimiento">✎</button><button class="icon-btn del" onclick="borrarFondoMov(\''+tipo+'\','+m.id+')">✕</button></div>'
       +'</div>';
   }).join('');
@@ -6122,7 +6281,7 @@ function openEditFondoMov(tipo,id){
     }
   }
   var ccCheckEdit=document.getElementById('gf-ingreso-caja-chica');
-  if(ccCheckEdit)ccCheckEdit.checked=!!m.cajaChicaIngreso;
+  if(ccCheckEdit)ccCheckEdit.checked=(gfTipo==='fondo-pesos' && m.cajaChicaIngreso===true);
   cqImpToggleAgregar('gf');
   cqComisionCajaInit('gf',m);
   openModal('modal-gasto-fondo');
@@ -8052,8 +8211,10 @@ function cqReporteEditar(boton){
     return '<span class="cq-gastos-sync-dot '+(ok?'ok':'')+'" title="'+escapeHTML(title)+'"></span>';
   }
   var _dualBase=window.cqDualSyncHTML;
-  if(typeof _dualBase==='function')window.cqDualSyncHTML=function(mov){
-    if(!(mov&&mov.panolAgregar))return _dualBase(mov)||'';
+  if(typeof _dualBase==='function')window.cqDualSyncHTML=function(mov,origen){
+    // Mantener el origen al delegar: Fondo comun $ necesita ese dato para
+    // mostrar el estado REAL de Caja Chica, en vez de los puntos de Gastos.
+    if(!(mov&&mov.panolAgregar))return _dualBase(mov,origen)||'';
     var p=dotPanol(mov),html='<span class="cq-sync-pair">';
     // Con precio: Gastos y Materiales están omitidos a propósito, mostrar sólo Pañol.
     // Sin precio: Gastos se registra ahora, Materiales sigue omitido; mostrar Gastos + Pañol.
