@@ -3670,7 +3670,7 @@ function renderDeuda(moneda){
       +'</div>'
       +'<div class="gasto-val">'+fmtMon(moneda,g.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(isReal&&moneda==='pesos'?cqDualSyncHTML(g):'')
+      +(isReal&&moneda==='pesos'?cqDualSyncHTML(g,'deuda-pesos'):'')
       +(isLiq?'':(isPP?'<button class="icon-btn" title="Modificar pago parcial" onclick="openEditPagoParcial(\''+moneda+'\','+g.id+')">✎</button>':'<button class="icon-btn" onclick="openEditDeuda(\''+moneda+'\','+g.id+')">✎</button>'))
       +'<button class="icon-btn del" onclick="borrarDeuda(\''+moneda+'\','+g.id+')">✕</button>'
       +'</div>'
@@ -5108,11 +5108,19 @@ function cqMaterialesDotHTML(mov){
         :(mov.materialesSyncError||'Error o faltante en Materiales')));
   return '<span class="cq-materiales-sync-dot '+cls+'" title="'+escapeHTML(title)+'"></span>';
 }
-function cqDualSyncHTML(mov){
+// Caja Chica es un destino EXCLUSIVO de Fondo común $ sin envío a Gastos.
+// No mostrar puntos históricos de Caja Chica en gastos ya imputados a obras.
+function cqCajaChicaVinculoCorresponde(mov){
+  if(!mov||mov.cajaChicaIngreso!==true)return false;
+  if(mov.imputacionPendienteGastos===true)return false;
+  if(Array.isArray(mov.imputaciones)&&mov.imputaciones.length>0)return false;
+  return true;
+}
+function cqDualSyncHTML(mov,origen){
   var g=cqSyncDotHTML(mov);
   var mat=cqMaterialesDotHTML(mov);
   var cc='';
-  if(mov&&mov.cajaChicaIngreso){
+  if(origen==='fondo-pesos' && cqCajaChicaVinculoCorresponde(mov)){
     var ccSt=mov.cajaChicaSyncEstado||'pendiente';
     var ccCls=ccSt==='ok'?'ok':(ccSt==='pendiente'?'wait':'');
     var ccTitle=ccSt==='ok'
@@ -5803,7 +5811,8 @@ async function cqVerificarIngresosCajaChica(){
   if(cqVerificandoCajaChica||!window._cqFirebase)return;
   cqVerificandoCajaChica=true;
   try{
-    var movs=(DB.fondoPesosMovs||[]).filter(function(m){return m&&m.cajaChicaIngreso;});
+    // No autorreparar ni recrear ingresos de Caja Chica para gastos imputados a Gastos.
+    var movs=(DB.fondoPesosMovs||[]).filter(cqCajaChicaVinculoCorresponde);
     if(!movs.length)return;
 
     var f=window._cqFirebase;
@@ -6063,7 +6072,7 @@ function renderFondo(tipo){
       +(isIng?cqIngresoDetalleIntegracion(m):((tipo==='fondo-pesos'||tipo==='santander')?cqCajaDetalleImputacion(m):''))+'</div>'
       +'<div class="gasto-val" style="color:'+(isIng?'#0A6E3A':cfg.accent)+'">'+(isIng?'+':'-')+cfg.fmt(m.monto)+'</div>'
       +'<div class="gasto-actions">'
-      +(isIng?cqIngresoSyncHTML(m):((tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m):''))
+      +(isIng?cqIngresoSyncHTML(m):((tipo==='fondo-pesos'||tipo==='santander')?cqDualSyncHTML(m,tipo):''))
       +'<button class="icon-btn" onclick="cqOpenEditFondoMovSmart(\''+tipo+'\','+m.id+')" title="Ver / editar movimiento">✎</button><button class="icon-btn del" onclick="borrarFondoMov(\''+tipo+'\','+m.id+')">✕</button></div>'
       +'</div>';
   }).join('');
@@ -6122,7 +6131,7 @@ function openEditFondoMov(tipo,id){
     }
   }
   var ccCheckEdit=document.getElementById('gf-ingreso-caja-chica');
-  if(ccCheckEdit)ccCheckEdit.checked=!!m.cajaChicaIngreso;
+  if(ccCheckEdit)ccCheckEdit.checked=cqCajaChicaVinculoCorresponde(m);
   cqImpToggleAgregar('gf');
   cqComisionCajaInit('gf',m);
   openModal('modal-gasto-fondo');
