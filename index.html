@@ -1,3 +1,4 @@
+<!-- CQ 20/11/2026 · Caja→Materiales: prioridad ID exacto frente a huella histórica ambigua -->
 <!-- CQ 20/11/2026 · Restauración explícita por ID en Caja → Materiales. -->
 <!-- CQ Caja Gerencia · indicadores por destino: Caja Chica sin puntos falsos de Gastos / Materiales · 2026-11-20 -->
 <!-- CQ Caja Gerencia · permisos individuales por módulo desde Gastos · 2026-10-13 -->
@@ -4202,8 +4203,10 @@ function cqCgMatBloqueoCarga(c,data,bo){
   data=data||{};bo=bo||{};
   var en=function(a,k){return Array.isArray(a)&&a.some(function(x){return String(x)===String(k);});};
   var iid=String(c.integracionId||''),mov=String(c.sourceMovementId||'');
+  // Clave lógica exacta: Materiales normaliza el nombre COMPLETO de la obra.
   var obra=cqCgMatNormalizarIdentidad(c.obraNameOrigen||c.obraName);
   var key='src:caja_gerencia|mov:'+mov+'|obra:'+obra;
+  var identidadEstable=!!(iid&&mov&&obra);
   var nom=cqCgMatNormalizarIdentidad(c.materialNameOrigen||c.matName);
   var cod=String(c.codigoOrigen||'').trim().toLowerCase();
   var matId=String(c.materialIdOrigen!=null?c.materialIdOrigen:c.matId||'');
@@ -4215,7 +4218,11 @@ function cqCgMatBloqueoCarga(c,data,bo){
   if(!restaurado){
     if(en(data.ignoredIntegrationIds,iid)||en(bo.ids,iid)||en(bo.ignoredIntegrationIds,iid))return 'La carga fue eliminada anteriormente en Materiales (bloqueo por ID).';
     if(en(data.ignoredIntegrationKeys,key)||en(bo.keys,key)||en(bo.ignoredIntegrationKeys,key))return 'Materiales conserva un bloqueo de una carga eliminada anteriormente.';
-    if(mat&&(en(data.ignoredIntegrationFingerprints,fp)||en(bo.fps,fp)||en(bo.ignoredIntegrationFingerprints,fp)))return 'Materiales conserva una baja histórica de este material y esta obra.';
+    // La huella (material/fecha/cantidad) NO identifica una compra única.
+    // Si Caja trae ID y movimiento+obra verificables, solo respetar bajas exactas
+    // por ID o clave lógica, chequeadas arriba. Huellas = respaldo legacy.
+    if(!identidadEstable&&mat&&(en(data.ignoredIntegrationFingerprints,fp)||en(bo.fps,fp)||en(bo.ignoredIntegrationFingerprints,fp)))
+      return 'Materiales conserva una baja histórica sin identidad exacta de este material y esta obra.';
   }
   if(en(data.deletedMatIds,c.matId))return 'El producto asociado fue eliminado del catálogo de Materiales.';
   if(en(data.deletedMaterialKeys,'name:'+cqCgMatNormalizarIdentidad(c.matName||c.materialNameOrigen)))
